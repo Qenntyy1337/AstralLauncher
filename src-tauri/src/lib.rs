@@ -42,7 +42,13 @@ where
         let result = f(app2.clone(), job, job_id_task.clone()).await;
         let message = match &result {
             Ok(m) => m.clone(),
-            Err(e) => e.clone(),
+            Err(e) => {
+                if e == "cancelled" {
+                    "Задача отменена".to_string()
+                } else {
+                    e.clone()
+                }
+            }
         };
         let _ = app2.emit(
             "task-finished",

@@ -355,6 +355,70 @@ pub fn client_jar_path(root: &PathBuf, id: &str) -> PathBuf {
     root.join("versions").join(id).join(format!("{}.jar", id))
 }
 
+/// Клиентский jar для запуска: свой, а если его нет — jar родителя по цепочке
+/// inheritsFrom (профили загрузчиков используют vanilla-jar родителя)
+pub fn resolve_client_jar(root: &PathBuf, id: &str) -> PathBuf {
+    let mut current = id.to_string();
+    for _ in 0..6 {
+        let p = client_jar_path(root, &current);
+        if p.is_file() {
+            return p;
+        }
+        let next = std::fs::read_to_string(version_json_path(root, &current))
+            .ok()
+            .and_then(|t| serde_json::from_str::<VersionJson>(&t).ok())
+            .and_then(|m| m.inherits());
+        match next {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+    client_jar_path(root, id)
+}
+
+/// Самовосстановление: докачивает недостающие json (самой версии или её
+/// родителей по inheritsFrom) из манифеста Mojang. Нужно, например, когда
+/// загрузчик установлен поверх прерванной установки ванили.
+pub async fn heal_version_chain(
+    app: &tauri::AppHandle,
+    root: &PathBuf,
+    version_id: &str,
+) -> Result<bool, String> {
+    let mut missing: Vec<String> = Vec::new();
+    let mut current = version_id.to_string();
+    for _ in 0..6 {
+        if !version_json_path(root, &current).is_file() {
+            missing.push(current.clone());
+        }
+        let next = std::fs::read_to_string(version_json_path(root, &current))
+            .ok()
+            .and_then(|t| serde_json::from_str::<VersionJson>(&t).ok())
+            .and_then(|m| m.inherits());
+        match next {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+    if missing.is_empty() {
+        return Ok(false);
+    }
+    let mut healed = false;
+    for id in missing {
+        let manifest = fetch_manifest_cached(app).await?;
+        let Some(entry) = manifest_entry(&manifest, &id) else {
+            return Ok(healed);
+        };
+        let entry = entry.clone();
+        let value = fetch_version_json(&entry.url).await?;
+        let dest = version_json_path(root, &id);
+        ensure_dir(dest.parent().unwrap())?;
+        let text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+        std::fs::write(&dest, text).map_err(|e| e.to_string())?;
+        healed = true;
+    }
+    Ok(healed)
+}
+
 pub fn maven_path_from_name(name: &str) -> String {
     let parts: Vec<&str> = name.split(':').collect();
     if parts.len() < 3 {
@@ -702,6 +766,21 @@ pub async fn install_version(
     let json_text = serde_json::to_string_pretty(&save_json).map_err(|e| e.to_string())?;
     std::fs::write(&json_dest, json_text).map_err(|e| e.to_string())?;
 
+    // Для профилей-наследников (fabric/forge) сохраняем также json родителя:
+    // без него запуск не сможет разрешить inheritsFrom и упадёт с
+    // «версия <родитель> не установлена»
+    if let Some(parent_value) = base_json_value.clone() {
+        if let Some(parent_id) = loader_json.as_ref().and_then(|l| l.inherits()) {
+            let parent_dest = version_json_path(root, &parent_id);
+            if !parent_dest.exists() {
+                ensure_dir(parent_dest.parent().unwrap())?;
+                let parent_text =
+                    serde_json::to_string_pretty(&parent_value).map_err(|e| e.to_string())?;
+                std::fs::write(&parent_dest, parent_text).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
     let natives_dir = root.join("versions").join(&loader_id).join("natives");
     let natives_list: Vec<PathBuf> = natives_jars.clone();
     for jar in natives_list {
@@ -813,12 +892,13 @@ pub fn list_installed(root: &PathBuf) -> Vec<InstalledVersion> {
         let Ok(model) = serde_json::from_str::<VersionJson>(&text) else {
             continue;
         };
-        let has_jar = client_jar_path(&versions_dir.parent().unwrap().to_path_buf(), &dir_name)
-            .exists()
-            || entry
-                .path()
-                .join(format!("{}.jar", dir_name))
-                .exists();
+        let root_dir = versions_dir.parent().unwrap().to_path_buf();
+        let has_jar = client_jar_path(&root_dir, &dir_name).exists()
+            || entry.path().join(format!("{}.jar", dir_name)).exists()
+            || model
+                .inherits()
+                .map(|p| client_jar_path(&root_dir, &p).exists())
+                .unwrap_or(false);
         out.push(InstalledVersion {
             id: dir_name,
             loader: model.detect_loader(),

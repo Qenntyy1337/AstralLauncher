@@ -35,6 +35,7 @@ pub struct Config {
     pub wallpaper: String,
     pub wallpaper_blur: u32,
     pub wallpaper_dim: u32,
+    pub play_loader: String,
 }
 
 impl Default for Config {
@@ -55,6 +56,7 @@ impl Default for Config {
             wallpaper: "aurora".to_string(),
             wallpaper_blur: 18,
             wallpaper_dim: 40,
+            play_loader: "vanilla".to_string(),
         }
     }
 }

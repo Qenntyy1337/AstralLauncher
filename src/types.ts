@@ -24,6 +24,7 @@ export interface Config {
   wallpaper: string;
   wallpaper_blur: number;
   wallpaper_dim: number;
+  play_loader: string;
 }
 
 export interface ManifestVersion {

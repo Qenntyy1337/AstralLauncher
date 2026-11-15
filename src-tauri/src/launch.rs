@@ -74,7 +74,20 @@ pub async fn launch(
     };
     let account = refresh_account(&app, state, account).await?;
 
-    let model = version::read_effective(&root, version_id).await?;
+    let model = match version::read_effective(&root, version_id).await {
+        Ok(m) => m,
+        Err(e) => {
+            // самовосстановление: докачиваем недостающие json версии/родителя
+            let healed = version::heal_version_chain(app, &root, version_id)
+                .await
+                .unwrap_or(false);
+            if healed {
+                version::read_effective(&root, version_id).await?
+            } else {
+                return Err(e);
+            }
+        }
+    };
     let major = crate::java::required_major(&model);
     let java_exe = crate::java::find_java(&cfg, &root, major)
         .ok_or(format!("JAVA_MISSING:{}", major))?;
@@ -88,7 +101,7 @@ pub async fn launch(
         java_exe
     };
 
-    let client_jar = version::client_jar_path(&root, version_id);
+    let client_jar = version::resolve_client_jar(&root, version_id);
     if !client_jar.is_file() {
         return Err(format!("файл версии {} не найден, установите её заново", version_id));
     }

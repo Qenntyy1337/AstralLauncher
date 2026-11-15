@@ -39,7 +39,9 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
   const [sizes, setSizes] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<string>("release");
   const [query, setQuery] = useState("");
-  const [loader, setLoader] = useState("vanilla");
+  // выбранный загрузчик хранится в конфиге и не сбрасывается при смене вкладки
+  const loader = config.play_loader || "vanilla";
+  const setLoader = (v: string) => patchConfig({ play_loader: v });
   const [selected, setSelected] = useState<string>(config.active_version ?? "");
   const [launching, setLaunching] = useState(false);
   const [running, setRunning] = useState<LaunchInfo | null>(null);
