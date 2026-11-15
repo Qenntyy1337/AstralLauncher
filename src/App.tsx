@@ -40,6 +40,7 @@ export default function App() {
   const [jobs, setJobs] = useState<Record<string, ProgressPayload>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [refreshSignal, setRefreshSignal] = useState(0);
+  const [customWallpaperData, setCustomWallpaperData] = useState<string | null>(null);
 
   const showToast = useCallback((msg: string, ok = true) => {
     const id = Date.now() + Math.random();
@@ -124,6 +125,10 @@ export default function App() {
         });
         if (t.ok && (t.kind === "install-version" || t.kind === "install-content" || t.kind === "install-java")) {
           setRefreshSignal((n) => n + 1);
+          // после установки бэкенд делает версию активной — подтягиваем конфиг
+          if (t.kind === "install-version") {
+            api.getConfig().then(setConfig).catch(() => {});
+          }
         }
       }),
       listen<ConsoleEntry>("console-log", (e) => logConsole(e.payload)),
@@ -141,6 +146,16 @@ export default function App() {
     () => config?.accounts.find((a) => a.id === config.active_account_id) ?? config?.accounts[0],
     [config],
   );
+
+  // свои обои: подтягиваем base64 при выборе "custom"
+  useEffect(() => {
+    if (config?.wallpaper === "custom") {
+      api
+        .getCustomWallpaper()
+        .then((d) => setCustomWallpaperData(d))
+        .catch(() => setCustomWallpaperData(null));
+    }
+  }, [config?.wallpaper]);
 
   if (!config) {
     return (
@@ -161,14 +176,39 @@ export default function App() {
     ember: "/wallpapers/ember.jpg",
   };
 
-  const wallpaper = config.wallpaper && WALLPAPERS[config.wallpaper] ? config.wallpaper : "aurora";
+  const wpSetting = config.wallpaper || "aurora";
+  const blur = typeof config.wallpaper_blur === "number" ? config.wallpaper_blur : 18;
+  const dim = typeof config.wallpaper_dim === "number" ? config.wallpaper_dim : 40;
+
+  let bgImage: string | null = null;
+  if (wpSetting === "custom") {
+    bgImage = customWallpaperData;
+  } else if (wpSetting !== "none" && WALLPAPERS[wpSetting]) {
+    bgImage = WALLPAPERS[wpSetting];
+  }
+  const showBg = bgImage !== null;
+
+  // затемнение поверх обоев, регулируется настройкой (10–80%)
+  const d1 = (dim * 0.55) / 100;
+  const d2 = dim / 100;
 
   return (
-    <div className={`app ${wallpaper !== "none" ? "has-bg" : ""}`}>
-      {wallpaper !== "none" ? (
+    <div className={`app ${showBg ? "has-bg" : ""}`}>
+      {showBg ? (
         <div
           className="bg-layer"
-          style={{ backgroundImage: `url(${WALLPAPERS[wallpaper]})` }}
+          style={{
+            backgroundImage: `url(${bgImage})`,
+            filter: `blur(${blur}px) brightness(0.92) saturate(1.25)`,
+          }}
+        />
+      ) : null}
+      {showBg ? (
+        <div
+          className="bg-shade"
+          style={{
+            background: `linear-gradient(180deg, rgba(7,9,16,${d1}) 0%, rgba(7,9,16,${(d1 + d2) / 2}) 55%, rgba(7,9,16,${d2}) 100%)`,
+          }}
         />
       ) : null}
       <div className="sidebar">

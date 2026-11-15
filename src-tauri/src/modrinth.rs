@@ -70,6 +70,9 @@ pub struct Project {
     pub license: Option<serde_json::Value>,
     #[serde(default)]
     pub date_created: String,
+    // В /project/{slug} Modrinth кладёт идентификатор в "id", а не "project_id"
+    #[serde(default, alias = "id")]
+    pub project_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

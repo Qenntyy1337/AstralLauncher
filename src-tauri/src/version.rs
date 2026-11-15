@@ -557,11 +557,13 @@ pub async fn install_version(
 
     if let Some(client) = effective.client_artifact() {
         if let Some(url) = client.url {
-            let path = client
-                .path
-                .clone()
-                .unwrap_or_else(|| format!("{}.jar", version_id));
-            let dest = root.join("versions").join(version_id).join(&path);
+            // jar кладём как versions/<id>/<id>.jar: именно этот путь ждут
+            // list_installed и запуск (для загрузчика dir = fabric-loader-... и т.п.)
+            let jar_dir = loader_id.clone();
+            let dest = root
+                .join("versions")
+                .join(&jar_dir)
+                .join(format!("{}.jar", jar_dir));
             items.push(DownloadItem {
                 url,
                 dest,

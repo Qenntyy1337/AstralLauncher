@@ -11,6 +11,7 @@ import {
   IconCPU,
   IconExternal,
   IconCheck,
+  IconImage,
 } from "../icons";
 import { Spinner } from "./common";
 
@@ -61,6 +62,25 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
     const picked = await open({ directory: true, multiple: false });
     if (typeof picked === "string") {
       setRootPath(picked);
+    }
+  };
+
+  const pickWallpaper = async () => {
+    try {
+      const picked = await open({
+        directory: false,
+        multiple: false,
+        filters: [
+          { name: "Изображения", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] },
+        ],
+      });
+      if (typeof picked === "string") {
+        const cfg = await api.setCustomWallpaper(picked);
+        patchConfig({ wallpaper: cfg.wallpaper });
+        showToast("Обои применены", true);
+      }
+    } catch (e) {
+      showToast(String(e), false);
     }
   };
 
@@ -230,12 +250,44 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
               <option value="aurora">Полярное сияние</option>
               <option value="nebula">Туманность</option>
               <option value="ember">Угольки</option>
+              <option value="custom">Свои обои</option>
               <option value="none">Без обоев</option>
             </select>
           </div>
-          <div className="hint" style={{ flex: 1, minWidth: 200 }}>
-            Обои слегка размыты и затемнены, чтобы текст оставался читаемым.
+          <button className="btn" onClick={pickWallpaper}>
+            <IconImage size={15} />
+            Загрузить свои обои…
+          </button>
+        </div>
+        <div className="row wrap" style={{ marginTop: 14, gap: 24 }}>
+          <div style={{ minWidth: 240 }}>
+            <span className="label">Размытие фона: {config.wallpaper_blur ?? 18} px</span>
+            <input
+              type="range"
+              min={0}
+              max={40}
+              step={2}
+              value={config.wallpaper_blur ?? 18}
+              onChange={(e) => patchConfig({ wallpaper_blur: Number(e.target.value) })}
+              style={{ width: "100%" }}
+            />
           </div>
+          <div style={{ minWidth: 240 }}>
+            <span className="label">Затемнение фона: {config.wallpaper_dim ?? 40}%</span>
+            <input
+              type="range"
+              min={10}
+              max={80}
+              step={5}
+              value={config.wallpaper_dim ?? 40}
+              onChange={(e) => patchConfig({ wallpaper_dim: Number(e.target.value) })}
+              style={{ width: "100%" }}
+            />
+          </div>
+        </div>
+        <div className="hint" style={{ marginTop: 8 }}>
+          Свои обои (PNG/JPG/WebP/GIF до 12 МБ) копируются в каталог лаунчера и применяются сразу.
+          Слайдеры регулируют силу размытия и затемнения, чтобы текст оставался читаемым.
         </div>
       </div>
 

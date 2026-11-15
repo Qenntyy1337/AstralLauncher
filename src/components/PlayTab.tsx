@@ -122,6 +122,13 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
       .catch((e) => showToast(String(e), false));
   };
 
+  useEffect(() => {
+    // бэкенд делает только что установленную версию активной — подхватываем
+    if (config.active_version) {
+      setSelected(config.active_version);
+    }
+  }, [config.active_version]);
+
   const launch = () => {
     const versionId = selected || config.active_version || "";
     if (!versionId) {
@@ -242,8 +249,9 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
                     </div>
                     {isSnapshot ? <span className="badge snapshot">снапшот</span> : null}
                     {isOld ? <span className="badge old">старая</span> : null}
+                    {!isSnapshot && !isOld ? <span className="badge release">релиз</span> : null}
                     {isInstalled ? (
-                      <span className="badge release">
+                      <span className="badge installed">
                         <IconCheck size={11} />
                         есть
                       </span>

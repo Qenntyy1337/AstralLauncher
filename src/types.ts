@@ -22,6 +22,8 @@ export interface Config {
   active_account_id: string | null;
   active_version: string | null;
   wallpaper: string;
+  wallpaper_blur: number;
+  wallpaper_dim: number;
 }
 
 export interface ManifestVersion {

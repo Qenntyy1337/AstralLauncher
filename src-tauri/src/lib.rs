@@ -156,13 +156,22 @@ async fn install_version_cmd(
     let root = state.config.lock().unwrap().root();
     spawn_job(&app, state.inner(), "install-version", move |app, job, job_id| {
         Box::pin(async move {
-            match loader {
+            let res = match loader {
                 Some(ld) if ld != "vanilla" => {
                     loaders::install_loader(&app, &root, &job, &job_id, &ld, &id, loader_version.as_deref())
                         .await
                 }
                 _ => version::install_version(&app, &root, &job, &job_id, &id, None).await,
+            };
+            // Успешная установка делает версию активной (для загрузчика это его id,
+            // например fabric-loader-0.20.1-26.3)
+            if let Ok(installed_id) = &res {
+                let st = app.state::<AppState>();
+                let mut guard = st.config.lock().unwrap();
+                guard.active_version = Some(installed_id.clone());
+                let _ = guard.save();
             }
+            res
         })
     })
 }
@@ -379,6 +388,72 @@ fn cancel_job(state: State<'_, AppState>, job_id: String) -> bool {
     state.cancel_job(&job_id)
 }
 
+const WALLPAPER_EXTS: [&str; 6] = ["jpg", "jpeg", "png", "webp", "bmp", "gif"];
+
+fn wallpaper_mime(ext: &str) -> &'static str {
+    match ext {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        _ => "image/gif",
+    }
+}
+
+#[tauri::command]
+fn set_custom_wallpaper(state: State<'_, AppState>, path: String) -> Result<Config, String> {
+    let src = PathBuf::from(path.trim());
+    if !src.is_file() {
+        return Err("файл обоев не найден".to_string());
+    }
+    let meta = std::fs::metadata(&src).map_err(|e| e.to_string())?;
+    if meta.len() > 12 * 1024 * 1024 {
+        return Err("файл слишком большой (максимум 12 МБ)".to_string());
+    }
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+    if !WALLPAPER_EXTS.contains(&ext.as_str()) {
+        return Err("поддерживаются PNG, JPG, WebP, GIF и BMP".to_string());
+    }
+    let cfg = state.config.lock().unwrap().clone();
+    let dest_dir = cfg.root().join("cache");
+    std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+    let dest = dest_dir.join(format!("custom-wallpaper.{}", ext));
+    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    for e2 in WALLPAPER_EXTS.iter() {
+        if *e2 != ext {
+            let _ = std::fs::remove_file(dest_dir.join(format!("custom-wallpaper.{}", e2)));
+        }
+    }
+    let mut guard = state.config.lock().unwrap();
+    guard.wallpaper = "custom".to_string();
+    guard.save()?;
+    Ok(guard.clone())
+}
+
+#[tauri::command]
+fn get_custom_wallpaper(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    use base64::Engine as _;
+    let cfg = state.config.lock().unwrap().clone();
+    let dir = cfg.root().join("cache");
+    for ext in WALLPAPER_EXTS.iter() {
+        let p = dir.join(format!("custom-wallpaper.{}", ext));
+        if p.is_file() {
+            let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            return Ok(Some(format!(
+                "data:{};base64,{}",
+                wallpaper_mime(ext),
+                b64
+            )));
+        }
+    }
+    Ok(None)
+}
+
 pub fn run() {
     let app_state = AppState::new();
     if let Err(e) = app_state.config.lock().unwrap().ensure_layout() {
@@ -414,7 +489,9 @@ pub fn run() {
             delete_content_file_cmd,
             launch_game,
             stop_game_cmd,
-            cancel_job
+            cancel_job,
+            set_custom_wallpaper,
+            get_custom_wallpaper
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AstralLauncher");

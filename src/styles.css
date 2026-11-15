@@ -94,12 +94,18 @@ button {
   z-index: 0;
 }
 
-.bg-layer::after {
-  content: "";
+/* Регулируемый затемняющий слой поверх обоев */
+.bg-shade {
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(180deg, rgba(7, 9, 16, 0.34) 0%, rgba(7, 9, 16, 0.48) 60%, rgba(7, 9, 16, 0.6) 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+  height: 22px;
+  cursor: pointer;
 }
 
 .app > .sidebar,
@@ -400,6 +406,11 @@ textarea.input {
 .badge.release {
   color: var(--success);
   background: rgba(61, 220, 151, 0.1);
+}
+
+.badge.installed {
+  color: var(--accent-2);
+  background: rgba(62, 197, 255, 0.12);
 }
 
 .badge.snapshot {

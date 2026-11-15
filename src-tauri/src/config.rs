@@ -33,6 +33,8 @@ pub struct Config {
     pub active_account_id: Option<String>,
     pub active_version: Option<String>,
     pub wallpaper: String,
+    pub wallpaper_blur: u32,
+    pub wallpaper_dim: u32,
 }
 
 impl Default for Config {
@@ -51,6 +53,8 @@ impl Default for Config {
             active_account_id: None,
             active_version: None,
             wallpaper: "aurora".to_string(),
+            wallpaper_blur: 18,
+            wallpaper_dim: 40,
         }
     }
 }

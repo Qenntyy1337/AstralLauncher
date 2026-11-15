@@ -14,27 +14,43 @@ import type {
   LaunchInfo,
 } from "./types";
 
+/**
+ * Tauri по умолчанию ждёт camelCase-ключи аргументов, но дублируем их и в
+ * snake_case (лишние ключи бэкенд игнорирует), а undefined не отправляем —
+ * JSON.stringify выкинул бы такой ключ, и команда упала бы с «missing required key».
+ */
+function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args)) {
+    if (v === undefined) continue;
+    out[k] = v;
+    const snake = k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+    if (snake !== k && !(snake in out)) out[snake] = v;
+  }
+  return invoke<T>(cmd, out);
+}
+
 export const api = {
-  getConfig: () => invoke<Config>("get_config"),
-  updateConfig: (cfg: Config) => invoke<Config>("update_config", { cfg }),
-  setRootPath: (path: string) => invoke<Config>("set_root_path", { path }),
-  getRootInfo: () => invoke<RootInfo>("get_root_info"),
-  openFolder: (path: string) => invoke<void>("open_folder", { path }),
-  listVersions: () => invoke<ManifestVersion[]>("list_versions"),
-  versionSize: (id: string) => invoke<SizeBreakdown>("version_size", { id }),
-  listInstalled: () => invoke<InstalledVersion[]>("list_installed_versions"),
+  getConfig: () => call<Config>("get_config"),
+  updateConfig: (cfg: Config) => call<Config>("update_config", { cfg }),
+  setRootPath: (path: string) => call<Config>("set_root_path", { path }),
+  getRootInfo: () => call<RootInfo>("get_root_info"),
+  openFolder: (path: string) => call<void>("open_folder", { path }),
+  listVersions: () => call<ManifestVersion[]>("list_versions"),
+  versionSize: (id: string) => call<SizeBreakdown>("version_size", { id }),
+  listInstalled: () => call<InstalledVersion[]>("list_installed_versions"),
   installVersion: (id: string, loader: string | null, loaderVersion: string | null) =>
-    invoke<string>("install_version_cmd", { id, loader, loaderVersion }),
+    call<string>("install_version_cmd", { id, loader, loaderVersion }),
   loaderVersions: (loader: string, mc: string) =>
-    invoke<string[]>("loader_versions", { loader, mc }),
-  installJava: (major: number) => invoke<string>("install_java_cmd", { major }),
-  getJavaRuntimes: () => invoke<JavaCandidate[]>("get_java_runtimes"),
-  setActiveVersion: (id: string) => invoke<Config>("set_active_version", { id }),
-  addOfflineAccount: (username: string) => invoke<Config>("add_offline_account", { username }),
-  msLoginStart: () => invoke<DeviceCode>("ms_login_start"),
-  msLoginFinish: (deviceCode: string) => invoke<Config>("ms_login_finish_cmd", { deviceCode }),
-  removeAccount: (id: string) => invoke<Config>("remove_account", { id }),
-  setActiveAccount: (id: string) => invoke<Config>("set_active_account", { id }),
+    call<string[]>("loader_versions", { loader, mc }),
+  installJava: (major: number) => call<string>("install_java_cmd", { major }),
+  getJavaRuntimes: () => call<JavaCandidate[]>("get_java_runtimes"),
+  setActiveVersion: (id: string) => call<Config>("set_active_version", { id }),
+  addOfflineAccount: (username: string) => call<Config>("add_offline_account", { username }),
+  msLoginStart: () => call<DeviceCode>("ms_login_start"),
+  msLoginFinish: (deviceCode: string) => call<Config>("ms_login_finish_cmd", { deviceCode }),
+  removeAccount: (id: string) => call<Config>("remove_account", { id }),
+  setActiveAccount: (id: string) => call<Config>("set_active_account", { id }),
   modrinthSearch: (
     query: string,
     projectType: string | null,
@@ -42,7 +58,7 @@ export const api = {
     loader: string | null,
     offset: number,
   ) =>
-    invoke<SearchResponse>("modrinth_search_cmd", {
+    call<SearchResponse>("modrinth_search_cmd", {
       query,
       projectType,
       mcVersion,
@@ -50,9 +66,9 @@ export const api = {
       categories: null,
       offset,
     }),
-  modrinthProject: (projectId: string) => invoke<Project>("modrinth_project_cmd", { projectId }),
+  modrinthProject: (projectId: string) => call<Project>("modrinth_project_cmd", { projectId }),
   modrinthVersions: (projectId: string, mcVersion: string | null, loader: string | null) =>
-    invoke<ModVersion[]>("modrinth_versions_cmd", { projectId, mcVersion, loader }),
+    call<ModVersion[]>("modrinth_versions_cmd", { projectId, mcVersion, loader }),
   modrinthInstall: (
     projectId: string,
     projectTitle: string,
@@ -61,7 +77,7 @@ export const api = {
     mcVersion: string,
     loader: string,
   ) =>
-    invoke<string>("modrinth_install_cmd", {
+    call<string>("modrinth_install_cmd", {
       projectId,
       projectTitle,
       projectType,
@@ -70,12 +86,14 @@ export const api = {
       loader,
     }),
   listContentFiles: (projectType: string) =>
-    invoke<FileInfo[]>("list_content_files_cmd", { projectType }),
+    call<FileInfo[]>("list_content_files_cmd", { projectType }),
   deleteContentFile: (projectType: string, name: string) =>
-    invoke<void>("delete_content_file_cmd", { projectType, name }),
-  launchGame: (versionId: string) => invoke<LaunchInfo>("launch_game", { versionId }),
-  stopGame: (pid: number) => invoke<void>("stop_game_cmd", { pid }),
-  cancelJob: (jobId: string) => invoke<boolean>("cancel_job", { jobId }),
+    call<void>("delete_content_file_cmd", { projectType, name }),
+  launchGame: (versionId: string) => call<LaunchInfo>("launch_game", { versionId }),
+  stopGame: (pid: number) => call<void>("stop_game_cmd", { pid }),
+  cancelJob: (jobId: string) => call<boolean>("cancel_job", { jobId }),
+  setCustomWallpaper: (path: string) => call<Config>("set_custom_wallpaper", { path }),
+  getCustomWallpaper: () => call<string | null>("get_custom_wallpaper"),
 };
 
 export function formatBytes(n: number): string {
