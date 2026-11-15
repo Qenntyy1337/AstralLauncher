@@ -31,58 +31,100 @@ pub fn runtime_java_exe(root: &PathBuf, major: u32) -> PathBuf {
     dir.join("bin").join("java.exe")
 }
 
+/// Мажорная версия java по выводу `java -version`:
+/// `openjdk version "21.0.1"` → 21, старый формат `"1.8.0_401"` → 8
+fn java_major_of(exe: &PathBuf) -> Option<u32> {
+    let out = std::process::Command::new(exe)
+        .arg("-version")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stderr);
+    let idx = text.find("version ")?;
+    let rest = text[idx + 8..].trim_start().trim_start_matches('"');
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let major: u32 = digits.parse().ok()?;
+    if major == 1 {
+        let after = &rest[digits.len() + 1..];
+        let d2: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+        return d2.parse().ok();
+    }
+    Some(major)
+}
+
+/// Поиск java: явный путь из настроек (без проверки — выбор пользователя),
+/// затем встроенный runtime лаунчера, затем системные JDK. Системные
+/// кандидаты проверяются фактическим `java -version`: без этого первым
+/// находился старый JDK (например 11), который не понимает современные
+/// опции (--enable-native-access) и JVM падала на старте.
 pub fn find_java(cfg: &Config, root: &PathBuf, major: u32) -> Option<PathBuf> {
     if !cfg.java_path.trim().is_empty() {
         let p = PathBuf::from(cfg.java_path.trim());
-        if p.join("java.exe").is_file() {
-            return Some(p.join("java.exe"));
-        }
-        if p.join("bin").join("java.exe").is_file() {
-            return Some(p.join("bin").join("java.exe"));
-        }
-        if p.join("bin").join("javaw.exe").is_file() {
-            return Some(p.join("bin").join("javaw.exe"));
+        for cand in [p.join("java.exe"), p.join("bin").join("java.exe"), p.join("bin").join("javaw.exe")] {
+            if cand.is_file() {
+                return Some(cand);
+            }
         }
     }
     let rt = runtime_java_exe(root, major);
     if rt.is_file() {
-        return Some(rt);
+        if let Some(m) = java_major_of(&rt) {
+            if m >= major {
+                return Some(rt);
+            }
+        }
     }
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(home) = std::env::var("ProgramFiles") {
-        for base in ["Java", "Eclipse Adoptium", "AdoptOpenJDK", "Zulu", "Microsoft"] {
-            let dir = PathBuf::from(&home).join(base);
-            if let Ok(entries) = std::fs::read_dir(&dir) {
-                for e in entries.flatten() {
-                    candidates.push(e.path().join("bin").join("javaw.exe"));
-                    candidates.push(e.path().join("bin").join("java.exe"));
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for home_key in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Ok(home) = std::env::var(home_key) {
+            for base in ["Java", "Eclipse Adoptium", "AdoptOpenJDK", "Zulu", "Microsoft"] {
+                if let Ok(entries) = std::fs::read_dir(PathBuf::from(&home).join(base)) {
+                    for e in entries.flatten() {
+                        dirs.push(e.path());
+                    }
                 }
             }
         }
     }
-    if let Ok(x86) = std::env::var("ProgramFiles(x86)") {
-        let dir = PathBuf::from(&x86).join("Java");
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for e in entries.flatten() {
-                candidates.push(e.path().join("bin").join("javaw.exe"));
-                candidates.push(e.path().join("bin").join("java.exe"));
-            }
-        }
-    }
-    for c in candidates {
-        if c.is_file() {
-            return Some(c);
-        }
-    }
     if let Ok(path_var) = std::env::var("PATH") {
-        for dir in path_var.split(';') {
-            let exe = PathBuf::from(dir).join("javaw.exe");
-            if exe.is_file() {
-                return Some(exe);
+        for d in path_var.split(';') {
+            let p = PathBuf::from(d);
+            if p.join("java.exe").is_file() || p.join("javaw.exe").is_file() {
+                dirs.push(p);
             }
         }
     }
-    None
+    let mut found: Vec<(u32, PathBuf)> = Vec::new();
+    for d in dirs {
+        let exe = d.join("bin").join("java.exe");
+        let exe = if exe.is_file() { exe } else { d.join("java.exe") };
+        let exe = if exe.is_file() {
+            exe
+        } else {
+            // некоторые JRE на PATH содержат только javaw.exe
+            let jw = d.join("bin").join("javaw.exe");
+            let jw2 = d.join("javaw.exe");
+            if jw.is_file() {
+                jw
+            } else if jw2.is_file() {
+                jw2
+            } else {
+                continue;
+            }
+        };
+        if let Some(m) = java_major_of(&exe) {
+            found.push((m, exe));
+        }
+    }
+    // точное совпадение требуемой версии, затем минимальная подходящая
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    if let Some((_, p)) = found.iter().find(|(m, _)| *m == major) {
+        return Some(p.clone());
+    }
+    found
+        .iter()
+        .find(|(m, _)| *m >= major)
+        .map(|(_, p)| p.clone())
 }
 
 pub fn required_major(model: &crate::version::VersionJson) -> u32 {
