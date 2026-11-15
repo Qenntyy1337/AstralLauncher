@@ -154,37 +154,50 @@ pub async fn launch(
         .unwrap_or_else(|| "legacy".to_string());
 
     let mut classpath_parts: Vec<String> = Vec::new();
+    let mut libs_missing = 0usize;
     let features = model.active_features();
     for lib in &model.libraries {
         if !eval_rules(&lib.rules, &features) {
             continue;
         }
-        if let Some(dl) = &lib.downloads {
-            if let Some(a) = &dl.artifact {
-                if let Some(path) = &a.path {
-                    let p = root.join("libraries").join(path);
-                    if p.is_file() {
-                        classpath_parts.push(p.to_string_lossy().to_string());
-                    }
-                } else {
-                    let path = version::maven_path_from_name(&lib.name);
-                    let p = root.join("libraries").join(&path);
-                    if p.is_file() {
-                        classpath_parts.push(p.to_string_lossy().to_string());
-                    }
-                }
-            } else {
-                let path = version::maven_path_from_name(&lib.name);
-                if !path.is_empty() {
-                    let p = root.join("libraries").join(&path);
-                    if p.is_file() {
-                        classpath_parts.push(p.to_string_lossy().to_string());
-                    }
-                }
-            }
+        // путь библиотеки: downloads.artifact.path, иначе maven-путь по имени —
+        // библиотеки загрузчиков (fabric/forge) не имеют downloads и обязаны
+        // попадать в classpath через maven-путь
+        let path = match &lib.downloads {
+            Some(dl) => match &dl.artifact {
+                Some(a) => a
+                    .path
+                    .clone()
+                    .unwrap_or_else(|| version::maven_path_from_name(&lib.name)),
+                None => version::maven_path_from_name(&lib.name),
+            },
+            None => version::maven_path_from_name(&lib.name),
+        };
+        let p = root.join("libraries").join(&path);
+        if p.is_file() {
+            classpath_parts.push(p.to_string_lossy().to_string());
+        } else {
+            libs_missing += 1;
         }
     }
     classpath_parts.push(client_jar.to_string_lossy().to_string());
+    if libs_missing > 0 {
+        crate::logger::emit_console(
+            &app,
+            "warn",
+            "launch",
+            &format!(
+                "внимание: {} библиотек отсутствуют на диске и не вошли в classpath",
+                libs_missing
+            ),
+        );
+    }
+    crate::logger::emit_console(
+        &app,
+        "info",
+        "launch",
+        &format!("classpath: {} библиотек + клиентский jar", classpath_parts.len()),
+    );
     let classpath = classpath_parts.join(";");
     let classpath_separator = ";";
 
