@@ -27,7 +27,7 @@ const TYPES = [
   { id: "world", label: "Карты" },
 ];
 
-const LOADERS = ["fabric", "forge", "neoforge", "quilt"];
+const LOADERS = ["fabric", "forge"];
 
 const TYPE_DIRS: Record<string, string> = {
   mod: "mods",
@@ -48,7 +48,6 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
   const [releases, setReleases] = useState<string[]>([]);
   const [details, setDetails] = useState<Project | null>(null);
   const [versionsList, setVersionsList] = useState<ModVersion[] | null>(null);
-  const [pickedVersion, setPickedVersion] = useState("");
   const [installedFiles, setInstalledFiles] = useState<FileInfo[]>([]);
   const [busyCard, setBusyCard] = useState<string | null>(null);
 
@@ -94,50 +93,44 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
   const openDetails = (hit: SearchHit) => {
     setDetails(null);
     setVersionsList(null);
-    setPickedVersion("");
     api
       .modrinthProject(hit.project_id)
       .then((p) => {
         setDetails(p);
         return api.modrinthVersions(p.slug, mc || null, type === "mod" ? loader : null);
       })
-      .then((v) => {
-        setVersionsList(v);
-        const compatible = v.find((x) => mc === "" || x.game_versions.includes(mc));
-        if (compatible) setPickedVersion(compatible.id);
-      })
+      .then((v) => setVersionsList(v))
       .catch((e) => {
         showToast(String(e), false);
         setDetails({ ...hit, body: "", downloads: hit.downloads, loaders: [], game_versions: [], license: null } as Project);
       });
   };
 
-  const installSelected = () => {
-    if (!details) return;
-    if (!mc) {
-      showToast("Выберите версию игры в фильтре сверху", false);
-      return;
-    }
-    setBusyCard(details.project_id);
+  // Совместимая версия игры для конкретной сборки мода: пересечение с релизами,
+  // иначе первая подходящая. Позволяет качать мод без выбора версии игры в фильтре.
+  const mcForVersion = (v: ModVersion): string => {
+    const rel = releases.find((r) => v.game_versions.includes(r));
+    if (rel) return rel;
+    return v.game_versions.find((g) => !g.includes("snapshot") && !g.includes("w")) ?? v.game_versions[0] ?? "";
+  };
+
+  const loaderForVersion = (v: ModVersion): string => {
+    if (type !== "mod") return "";
+    if (v.loaders.includes(loader)) return loader;
+    return v.loaders.find((l) => LOADERS.includes(l)) ?? "";
+  };
+
+  const installVersion = (projectTitle: string, projectId: string, projectType: string, v: ModVersion) => {
+    const mc = mcForVersion(v);
+    setBusyCard(projectId);
     api
-      .modrinthInstall(
-        details.project_id,
-        details.title,
-        details.project_type || type,
-        pickedVersion || null,
-        mc,
-        type === "mod" ? loader : "",
-      )
-      .then((jobId) => startJob(jobId, `Установка: ${details.title}`))
+      .modrinthInstall(projectId, projectTitle, projectType, v.id, mc, loaderForVersion(v))
+      .then((jobId) => startJob(jobId, `Установка: ${projectTitle} ${v.version_number}`))
       .catch((e) => showToast(String(e), false))
       .finally(() => setBusyCard(null));
   };
 
   const quickInstall = (hit: SearchHit) => {
-    if (!mc) {
-      showToast("Выберите версию игры в фильтре сверху", false);
-      return;
-    }
     setBusyCard(hit.project_id);
     api
       .modrinthInstall(hit.project_id, hit.title, hit.project_type || type, null, mc, type === "mod" ? loader : "")
@@ -362,36 +355,44 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
             ) : null}
             <div className="divider" />
             <div>
-              <span className="label">Версия релиза</span>
+              <span className="label">Сборки — нажмите «Скачать» рядом с нужной версией</span>
               {versionsList === null ? (
-                <div className="row" style={{ padding: 8 }}>
+                <div className="row" style={{ padding: 8, justifyContent: "center" }}>
                   <Spinner />
                 </div>
               ) : versionsList.length === 0 ? (
                 <div className="hint">Нет сборок для выбранных фильтров (игра {mc || "любая"})</div>
               ) : (
-                <select
-                  className="select"
-                  style={{ width: "100%" }}
-                  value={pickedVersion}
-                  onChange={(e) => setPickedVersion(e.target.value)}
-                >
-                  {versionsList.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.version_number} — {formatDate(v.date_published)} ({formatBytes(v.files.find((f) => f.primary)?.size ?? 0)})
-                    </option>
+                <div className="mod-versions">
+                  {versionsList.slice(0, 20).map((v) => (
+                    <div className="mod-version-row" key={v.id}>
+                      <div className="grow">
+                        <div className="mv-name">{v.version_number}</div>
+                        <div className="mv-meta">
+                          {formatDate(v.date_published)} · {formatBytes(v.files.find((f) => f.primary)?.size ?? 0)}
+                          {v.loaders.length > 0 ? ` · ${v.loaders.join(", ")}` : ""}
+                        </div>
+                      </div>
+                      <button
+                        className="btn sm primary"
+                        disabled={busyCard === details.project_id}
+                        onClick={() =>
+                          installVersion(details.title, details.project_id, details.project_type || type, v)
+                        }
+                      >
+                        <IconDownload size={13} />
+                        Скачать
+                      </button>
+                    </div>
                   ))}
-                </select>
+                  {versionsList.length > 20 ? (
+                    <div className="hint" style={{ marginTop: 6 }}>
+                      Показаны первые 20 из {formatNumber(versionsList.length)} сборок
+                    </div>
+                  ) : null}
+                </div>
               )}
             </div>
-            <button
-              className="btn primary"
-              onClick={installSelected}
-              disabled={busyCard === details.project_id || !pickedVersion}
-            >
-              <IconDownload size={15} />
-              Установить {pickedVersion ? "" : "(выберите версию)"}
-            </button>
           </div>
         </div>
       ) : null}

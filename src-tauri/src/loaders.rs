@@ -11,13 +11,21 @@ pub async fn fabric_loader_versions() -> Result<Vec<String>, String> {
     let arr = value.as_array().ok_or("fabric meta: не массив")?;
     let mut out = Vec::new();
     for item in arr {
-        if let Some(v) = item
-            .get("loader")
-            .and_then(|l| l.get("version"))
+        // Формат meta v2: {"version": "0.20.1", ...}; старый формат: {"loader": {"version": ...}}
+        let v = item
+            .get("version")
             .and_then(|v| v.as_str())
-        {
+            .or_else(|| {
+                item.get("loader")
+                    .and_then(|l| l.get("version"))
+                    .and_then(|v| v.as_str())
+            });
+        if let Some(v) = v {
             out.push(v.to_string());
         }
+    }
+    if out.is_empty() {
+        return Err("fabric meta пуст".to_string());
     }
     Ok(out)
 }
@@ -27,31 +35,11 @@ pub async fn fabric_profile(mc: &str, loader: &str) -> Result<Value, String> {
         "https://meta.fabricmc.net/v2/versions/loader/{}/{}/profile/json",
         mc, loader
     );
-    get_json(&url).await
-}
-
-pub async fn quilt_loader_versions() -> Result<Vec<String>, String> {
-    let value = get_json("https://meta.quiltmc.org/v3/versions/loader").await?;
-    let arr = value.as_array().ok_or("quilt meta: не массив")?;
-    let mut out = Vec::new();
-    for item in arr {
-        if let Some(v) = item
-            .get("loader")
-            .and_then(|l| l.get("version"))
-            .and_then(|v| v.as_str())
-        {
-            out.push(v.to_string());
-        }
+    let value = get_json(&url).await?;
+    if value.get("inheritsFrom").is_none() && value.get("mainClass").is_none() {
+        return Err(format!("Fabric: нет профиля для {} (мета вернула ошибку)", mc));
     }
-    Ok(out)
-}
-
-pub async fn quilt_profile(mc: &str, loader: &str) -> Result<Value, String> {
-    let url = format!(
-        "https://meta.quiltmc.org/v3/versions/loader/{}/{}/profile/json",
-        mc, loader
-    );
-    get_json(&url).await
+    Ok(value)
 }
 
 pub async fn forge_promotions() -> Result<Value, String> {
@@ -66,6 +54,12 @@ fn extract_xml_versions(text: &str) -> Vec<String> {
 }
 
 pub async fn forge_versions(mc: &str) -> Result<Vec<String>, String> {
+    if crate::version::ManifestVersion::is_snapshot_id(mc) {
+        return Err(format!(
+            "Forge не поддерживает снапшоты: {}. Выберите релиз, например 26.3",
+            mc
+        ));
+    }
     let prefix = format!("{}-", mc);
     let mut out: Vec<String> = Vec::new();
     let resp = client()
@@ -101,56 +95,6 @@ pub async fn forge_versions(mc: &str) -> Result<Vec<String>, String> {
         return Err(format!("Forge недоступен для {}", mc));
     }
     out.truncate(30);
-    Ok(out)
-}
-
-fn neoforge_prefix(mc: &str) -> Option<String> {
-    match mc {
-        "1.16.5" => Some("36.".to_string()),
-        "1.17.1" => Some("37.".to_string()),
-        "1.18.2" => Some("40.".to_string()),
-        "1.19.2" => Some("41.".to_string()),
-        "1.19.3" => Some("42.".to_string()),
-        "1.19.4" => Some("43.".to_string()),
-        "1.20.1" => Some("47.".to_string()),
-        _ => {
-            let parts: Vec<&str> = mc.split('.').collect();
-            if parts.len() >= 2 && parts[0] == "1" {
-                let minor: u32 = parts[1].parse().ok()?;
-                let patch: u32 = parts
-                    .get(2)
-                    .and_then(|p| p.parse().ok())
-                    .unwrap_or(0);
-                if minor == 20 && patch >= 2 {
-                    return Some(format!("20.{}.", patch));
-                }
-                if minor >= 21 {
-                    return Some(format!("{}.{}.", minor, patch));
-                }
-            }
-            None
-        }
-    }
-}
-
-pub async fn neoforge_versions(mc: &str) -> Result<Vec<String>, String> {
-    let prefix = neoforge_prefix(mc).ok_or_else(|| format!("NeoForge не поддерживает {}", mc))?;
-    let value = get_json("https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge").await?;
-    let arr = value
-        .get("versions")
-        .and_then(|v| v.as_array())
-        .ok_or("neoforge maven: нет versions")?;
-    let mut out: Vec<String> = arr
-        .iter()
-        .filter_map(|v| v.as_str())
-        .filter(|v| v.starts_with(&prefix))
-        .map(|s| s.to_string())
-        .collect();
-    out.reverse();
-    out.truncate(30);
-    if out.is_empty() {
-        return Err(format!("NeoForge: нет сборок для {}", mc));
-    }
     Ok(out)
 }
 
@@ -224,6 +168,17 @@ fn newest_version_dir(root: &PathBuf, mc: &str) -> Option<String> {
     best.map(|(_, n)| n)
 }
 
+/// Требуемая Java для установщика Forge: из javaVersion в JSON самой версии Mojang.
+async fn required_java_for(app: &tauri::AppHandle, mc: &str) -> Result<u32, String> {
+    let manifest = crate::version::fetch_manifest_cached(app).await?;
+    let entry = crate::version::manifest_entry(&manifest, mc)
+        .ok_or_else(|| format!("версия {} не найдена в манифесте", mc))?;
+    let value = crate::version::fetch_version_json(&entry.url).await?;
+    let model: crate::version::VersionJson =
+        serde_json::from_value(value).map_err(|e| format!("битый JSON {}: {}", mc, e))?;
+    Ok(java::required_major(&model))
+}
+
 pub async fn install_loader(
     app: &tauri::AppHandle,
     root: &PathBuf,
@@ -252,91 +207,43 @@ pub async fn install_loader(
             let profile = fabric_profile(mc, &lv).await?;
             crate::version::install_version(app, root, job, job_id, mc, Some(profile)).await
         }
-        "quilt" => {
-            let lv = match loader_version {
+        "forge" => {
+            if crate::version::ManifestVersion::is_snapshot_id(mc) {
+                return Err(format!(
+                    "Forge не поддерживает снапшоты: {}. Выберите релиз, например 26.3",
+                    mc
+                ));
+            }
+            let full = match loader_version {
                 Some(v) if !v.is_empty() => v.to_string(),
-                _ => quilt_loader_versions()
+                _ => forge_versions(mc)
                     .await?
                     .first()
                     .cloned()
-                    .ok_or("quilt meta пуст")?,
+                    .ok_or("нет сборок Forge")?,
             };
-            crate::logger::emit_console(
-                app,
-                "info",
-                "loader",
-                &format!("Quilt {}: профиль для {}", lv, mc),
+            let url = format!(
+                "https://maven.minecraftforge.net/net/minecraftforge/forge/{}/forge-{}-installer.jar",
+                full, full
             );
-            let profile = quilt_profile(mc, &lv).await?;
-            crate::version::install_version(app, root, job, job_id, mc, Some(profile)).await
-        }
-        "forge" | "neoforge" => {
-            let (builds, installer_url): (Vec<String>, Box<dyn Fn(&str) -> String + Send>) = if loader == "forge" {
-                (
-                    match loader_version {
-                        Some(v) if !v.is_empty() => vec![v.to_string()],
-                        _ => forge_versions(mc).await?,
-                    },
-                    Box::new(|full: &str| {
-                        format!(
-                            "https://maven.minecraftforge.net/net/minecraftforge/forge/{}/forge-{}-installer.jar",
-                            full, full
-                        )
-                    }),
-                )
-            } else {
-                (
-                    match loader_version {
-                        Some(v) if !v.is_empty() => vec![v.to_string()],
-                        _ => neoforge_versions(mc).await?,
-                    },
-                    Box::new(|build: &str| {
-                        format!(
-                            "https://maven.neoforged.net/releases/net/neoforged/neoforge/{}/neoforge-{}-installer.jar",
-                            build, build
-                        )
-                    }),
-                )
-            };
-            let full = builds.first().cloned().ok_or("нет сборок")?;
-            let url = installer_url(&full);
-            crate::logger::emit_console(app, "info", "loader", &format!("{} {}: {}", loader, full, url));
+            crate::logger::emit_console(app, "info", "loader", &format!("Forge {}: {}", full, url));
 
-            let major = if mc.starts_with("1.") {
-                let parts: Vec<&str> = mc.split('.').collect();
-                let minor: u32 = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(0);
-                let patch: u32 = parts
-                    .get(2)
-                    .and_then(|p| p.split('-').next())
-                    .and_then(|p| p.parse().ok())
-                    .unwrap_or(0);
-                if minor >= 21 || (minor == 20 && patch >= 5) {
-                    21
-                } else if minor >= 18 || (minor == 17 && patch >= 1) {
-                    17
-                } else if minor == 17 {
-                    16
-                } else {
-                    8
-                }
-            } else {
-                21
-            };
+            let major = required_java_for(app, mc).await.unwrap_or(21);
             let cfg = crate::config::Config::load();
             let java_exe = java::find_java(&cfg, root, major)
                 .ok_or(format!("JAVA_MISSING:{}", major))?;
 
-            let dest = root.join("cache").join("installers").join(format!(
-                "{}-{}-installer.jar",
-                loader, full
-            ));
+            let dest = root
+                .join("cache")
+                .join("installers")
+                .join(format!("forge-{}-installer.jar", full));
             if !dest.exists() {
                 crate::logger::emit_console(app, "info", "loader", "Скачивание установщика...");
                 crate::download::download_all(
                     app,
                     job,
                     job_id,
-                    &format!("Установщик {}", loader),
+                    "Установщик Forge",
                     vec![crate::download::DownloadItem {
                         url,
                         dest: dest.clone(),

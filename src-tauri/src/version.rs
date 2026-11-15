@@ -13,8 +13,9 @@ use crate::util::{ensure_dir, eval_rules};
 const MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 const RESOURCES_URL: &str = "https://resources.download.minecraft.net";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ManifestVersion {
+/// Как приходит от Mojang (type / releaseTime)
+#[derive(Debug, Clone, Deserialize)]
+pub struct RawManifestVersion {
     pub id: String,
     #[serde(rename = "type")]
     pub kind: String,
@@ -23,6 +24,37 @@ pub struct ManifestVersion {
     pub release_time: String,
     #[serde(default)]
     pub sha1: Option<String>,
+}
+
+/// Как уходит на фронтенд (kind / release_time)
+#[derive(Debug, Clone, Serialize)]
+pub struct ManifestVersion {
+    pub id: String,
+    pub kind: String,
+    pub url: String,
+    pub release_time: String,
+    pub sha1: Option<String>,
+}
+
+impl From<RawManifestVersion> for ManifestVersion {
+    fn from(r: RawManifestVersion) -> Self {
+        Self {
+            id: r.id,
+            kind: r.kind,
+            url: r.url,
+            release_time: r.release_time,
+            sha1: r.sha1,
+        }
+    }
+}
+
+impl ManifestVersion {
+    pub fn is_snapshot_id(id: &str) -> bool {
+        id.contains("snapshot")
+            || id.contains("-pre")
+            || id.contains("-rc")
+            || (!id.starts_with("1.") && !id.starts_with("26.") && id.contains('w'))
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -287,10 +319,11 @@ pub async fn fetch_manifest(
         }
     }
     let value = get_json(MANIFEST_URL).await?;
-    let versions: Vec<ManifestVersion> = serde_json::from_value(
+    let raw: Vec<RawManifestVersion> = serde_json::from_value(
         value.get("versions").cloned().unwrap_or_default(),
     )
     .map_err(|e| e.to_string())?;
+    let versions: Vec<ManifestVersion> = raw.into_iter().map(Into::into).collect();
     *state.manifest_cache.lock().unwrap() =
         Some((std::time::Instant::now(), versions.clone()));
     Ok(versions)
@@ -406,8 +439,7 @@ fn library_artifact_url(lib: &Library) -> Option<(String, String, Option<String>
     Some((path, url, None, None))
 }
 
-pub async fn compute_size(root: &PathBuf, id: &str) -> Result<SizeBreakdown, String> {
-    let model = read_version_model(root, id).await?;
+pub async fn size_from_model(model: &VersionJson) -> SizeBreakdown {
     let mut client_bytes = 0u64;
     let mut libraries_bytes = 0u64;
     let mut assets_bytes = 0u64;
@@ -435,27 +467,46 @@ pub async fn compute_size(root: &PathBuf, id: &str) -> Result<SizeBreakdown, Str
     }
     if let Some(ai) = model.asset_index() {
         assets_bytes += ai.total_size.or(ai.total_size_camel).unwrap_or(0);
-        if assets_bytes == 0 {
-            if let Some(url) = &ai.url {
-                if let Ok(v) = get_json(url).await {
-                    if let Some(objects) = v.get("objects").and_then(|o| o.as_object()) {
-                        for obj in objects.values() {
-                            assets_bytes += obj
-                                .get("size")
-                                .and_then(|s| s.as_u64())
-                                .unwrap_or(0);
-                        }
-                    }
-                }
-            }
-        }
     }
-    Ok(SizeBreakdown {
+    SizeBreakdown {
         client_bytes,
         libraries_bytes,
         assets_bytes,
         total_bytes: client_bytes + libraries_bytes + assets_bytes,
-    })
+    }
+}
+
+/// Размер версии до установки: локальный JSON, если есть, иначе качаем JSON с сервера Mojang.
+/// Результат кэшируется в AppState, чтобы не ходить в сеть повторно.
+pub async fn version_meta_size(
+    state: &AppState,
+    id: &str,
+) -> Result<SizeBreakdown, String> {
+    {
+        let cache = state.size_cache.lock().unwrap();
+        if let Some(s) = cache.get(id) {
+            return Ok(s.clone());
+        }
+    }
+    let root = state.config.lock().unwrap().root();
+    let model = match read_version_model(&root, id).await {
+        Ok(m) => m,
+        Err(_) => {
+            let manifest = fetch_manifest(state).await?;
+            let entry =
+                manifest_entry(&manifest, id).ok_or_else(|| format!("версия {} не найдена в манифесте", id))?;
+            let value = fetch_version_json(&entry.url).await?;
+            serde_json::from_value::<VersionJson>(value)
+                .map_err(|e| format!("битый JSON {}: {}", id, e))?
+        }
+    };
+    let breakdown = size_from_model(&model).await;
+    state
+        .size_cache
+        .lock()
+        .unwrap()
+        .insert(id.to_string(), breakdown.clone());
+    Ok(breakdown)
 }
 
 #[allow(clippy::too_many_arguments)]

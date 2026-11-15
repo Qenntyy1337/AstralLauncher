@@ -135,8 +135,7 @@ async fn list_versions(app: AppHandle) -> Result<Vec<version::ManifestVersion>, 
 
 #[tauri::command]
 async fn version_size(state: State<'_, AppState>, id: String) -> Result<version::SizeBreakdown, String> {
-    let root = state.config.lock().unwrap().root();
-    version::compute_size(&root, &id).await
+    version::version_meta_size(state.inner(), &id).await
 }
 
 #[tauri::command]
@@ -172,9 +171,7 @@ async fn install_version_cmd(
 async fn loader_versions(loader: String, mc: String) -> Result<Vec<String>, String> {
     match loader.as_str() {
         "fabric" => loaders::fabric_loader_versions().await,
-        "quilt" => loaders::quilt_loader_versions().await,
         "forge" => loaders::forge_versions(&mc).await,
-        "neoforge" => loaders::neoforge_versions(&mc).await,
         _ => Ok(Vec::new()),
     }
 }
@@ -321,12 +318,9 @@ async fn modrinth_install_cmd(
     project_title: String,
     project_type: String,
     version_id: Option<String>,
-    mc_version: String,
+    mc_version: Option<String>,
     loader: String,
 ) -> Result<String, String> {
-    if mc_version.trim().is_empty() {
-        return Err("выберите версию игры во вкладке Игра или в фильтрах".to_string());
-    }
     let root = state.config.lock().unwrap().root();
     spawn_job(&app, state.inner(), "install-content", move |app, job, job_id| {
         Box::pin(async move {
@@ -339,7 +333,7 @@ async fn modrinth_install_cmd(
                 &project_title,
                 &project_type,
                 version_id.as_deref(),
-                &mc_version,
+                mc_version.as_deref().unwrap_or(""),
                 &loader,
             )
             .await

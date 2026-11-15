@@ -28,6 +28,7 @@ pub struct AppState {
     pub config: Mutex<Config>,
     pub jobs: Mutex<HashMap<String, std::sync::Arc<JobState>>>,
     pub manifest_cache: Mutex<Option<(std::time::Instant, Vec<crate::version::ManifestVersion>)>>,
+    pub size_cache: Mutex<HashMap<String, crate::version::SizeBreakdown>>,
 }
 
 impl AppState {
@@ -36,6 +37,7 @@ impl AppState {
             config: Mutex::new(Config::load()),
             jobs: Mutex::new(HashMap::new()),
             manifest_cache: Mutex::new(None),
+            size_cache: Mutex::new(HashMap::new()),
         }
     }
 

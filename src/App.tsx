@@ -155,8 +155,22 @@ export default function App() {
 
   const jobList = Object.values(jobs);
 
+  const WALLPAPERS: Record<string, string> = {
+    aurora: "/wallpapers/aurora.jpg",
+    nebula: "/wallpapers/nebula.jpg",
+    ember: "/wallpapers/ember.jpg",
+  };
+
+  const wallpaper = config.wallpaper && WALLPAPERS[config.wallpaper] ? config.wallpaper : "aurora";
+
   return (
-    <div className="app">
+    <div className={`app ${wallpaper !== "none" ? "has-bg" : ""}`}>
+      {wallpaper !== "none" ? (
+        <div
+          className="bg-layer"
+          style={{ backgroundImage: `url(${WALLPAPERS[wallpaper]})` }}
+        />
+      ) : null}
       <div className="sidebar">
         <div className="logo">
           <LogoMark size={34} />

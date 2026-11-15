@@ -32,6 +32,7 @@ pub struct Config {
     pub accounts: Vec<Account>,
     pub active_account_id: Option<String>,
     pub active_version: Option<String>,
+    pub wallpaper: String,
 }
 
 impl Default for Config {
@@ -49,6 +50,7 @@ impl Default for Config {
             accounts: Vec::new(),
             active_account_id: None,
             active_version: None,
+            wallpaper: "aurora".to_string(),
         }
     }
 }

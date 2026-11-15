@@ -241,6 +241,24 @@ fn primary_file(version: &ModVersion) -> Option<&ModFile> {
         .or_else(|| version.files.first())
 }
 
+/// Из списка совместимых версий игры берём первый релиз (без снапшотов).
+fn derive_mc_version(version: &ModVersion) -> String {
+    for gv in &version.game_versions {
+        if !gv.contains("snapshot")
+            && !gv.contains("-pre")
+            && !gv.contains("-rc")
+            && !gv.contains('w')
+        {
+            return gv.clone();
+        }
+    }
+    version
+        .game_versions
+        .first()
+        .cloned()
+        .unwrap_or_default()
+}
+
 fn file_sha1(file: &ModFile) -> Option<String> {
     file.hashes
         .as_ref()
@@ -338,7 +356,7 @@ pub async fn install_content(
     mc_version: &str,
     loader: &str,
 ) -> Result<String, String> {
-    let mc = if mc_version.is_empty() {
+    let mc_opt = if mc_version.is_empty() {
         None
     } else {
         Some(mc_version)
@@ -350,11 +368,23 @@ pub async fn install_content(
     };
     let version = match version_id {
         Some(vid) if !vid.is_empty() => version_by_id(vid).await?,
-        _ => resolve_version_for_project(project_id, mc, ld).await?,
+        _ => resolve_version_for_project(project_id, mc_opt, ld).await?,
+    };
+    // Если версия игры не выбрана — выводим её из самой сборки мода.
+    let mc: Option<String> = match mc_opt {
+        Some(m) => Some(m.to_string()),
+        None => {
+            let derived = derive_mc_version(&version);
+            if derived.is_empty() {
+                None
+            } else {
+                Some(derived)
+            }
+        }
     };
     let dest_dir = content_dir(root, project_type)?;
     ensure_dir(&dest_dir)?;
-    let files = collect_files(&version, mc, ld, 0).await?;
+    let files = collect_files(&version, mc.as_deref(), ld, 0).await?;
     let mut items: Vec<DownloadItem> = Vec::new();
     let mut installed_names: Vec<String> = Vec::new();
     for (name, file) in &files {

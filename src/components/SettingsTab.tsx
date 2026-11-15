@@ -217,6 +217,29 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
       </div>
 
       <div className="card">
+        <div className="card-title">Внешний вид</div>
+        <div className="row wrap" style={{ alignItems: "flex-end" }}>
+          <div>
+            <span className="label">Фон лаунчера</span>
+            <select
+              className="select"
+              style={{ minWidth: 220 }}
+              value={config.wallpaper || "aurora"}
+              onChange={(e) => patchConfig({ wallpaper: e.target.value })}
+            >
+              <option value="aurora">Полярное сияние</option>
+              <option value="nebula">Туманность</option>
+              <option value="ember">Угольки</option>
+              <option value="none">Без обоев</option>
+            </select>
+          </div>
+          <div className="hint" style={{ flex: 1, minWidth: 200 }}>
+            Обои слегка размыты и затемнены, чтобы текст оставался читаемым.
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
         <div className="card-title">Окно игры</div>
         <div className="row wrap">
           <div>

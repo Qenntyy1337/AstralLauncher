@@ -24,9 +24,7 @@ interface PlayTabProps {
 const LOADERS: { id: string; label: string }[] = [
   { id: "vanilla", label: "Vanilla" },
   { id: "fabric", label: "Fabric" },
-  { id: "neoforge", label: "NeoForge" },
   { id: "forge", label: "Forge" },
-  { id: "quilt", label: "Quilt" },
 ];
 
 function versionGroup(kind: string): string {
@@ -89,22 +87,29 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
 
   useEffect(() => {
     const gen = ++fetchGen.current;
-    const targets = filtered.slice(0, 40).map((v) => v.id).filter((id) => !(id in sizes));
-    let idx = 0;
-    const next = () => {
-      if (cancelled || gen !== fetchGen.current || idx >= targets.length) return;
-      const id = targets[idx++];
-      api
-        .versionSize(id)
-        .then((s: SizeBreakdown) => {
-          if (gen !== fetchGen.current) return;
-          setSizes((prev) => ({ ...prev, [id]: s.total_bytes }));
-          next();
-        })
-        .catch(() => next());
-    };
+    const targets = filtered.slice(0, 60).map((v) => v.id).filter((id) => !(id in sizes));
     let cancelled = false;
-    next();
+    // Небольшие параллельные партии, чтобы размеры появлялись быстро,
+    // но без очереди из 60 запросов к Mojang
+    const BATCH = 8;
+    const runBatch = (start: number) => {
+      if (cancelled || gen !== fetchGen.current) return;
+      const batch = targets.slice(start, start + BATCH);
+      if (batch.length === 0) return;
+      Promise.all(
+        batch.map((id) =>
+          api
+            .versionSize(id)
+            .then((s: SizeBreakdown) => {
+              if (gen === fetchGen.current && !cancelled) {
+                setSizes((prev) => ({ ...prev, [id]: s.total_bytes }));
+              }
+            })
+            .catch(() => {}),
+        ),
+      ).then(() => runBatch(start + BATCH));
+    };
+    runBatch(0);
     return () => {
       cancelled = true;
     };
@@ -220,6 +225,9 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
               {filtered.slice(0, 60).map((v) => {
                 const size = sizes[v.id];
                 const isInstalled = installed.some((i) => i.id === v.id || i.id.includes(v.id));
+                const isSnapshot = versionGroup(v.kind) === "snapshot";
+                const isOld = versionGroup(v.kind) === "old";
+                const forgeBlocked = loader === "forge" && (isSnapshot || v.id.includes("snapshot"));
                 return (
                   <div className="list-item version-row" key={v.id}>
                     <div className="grow">
@@ -227,11 +235,13 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
                       <div className="meta row" style={{ gap: 10, marginTop: 2 }}>
                         <span className="row" style={{ gap: 4 }}>
                           <IconClock size={12} />
-                          {formatDate(v.release_time)}
+                          {formatDate(v.release_time) || "—"}
                         </span>
-                        <span>{size !== undefined ? formatBytes(size) : "—"}</span>
+                        <span>{size !== undefined ? formatBytes(size) : "…"}</span>
                       </div>
                     </div>
+                    {isSnapshot ? <span className="badge snapshot">снапшот</span> : null}
+                    {isOld ? <span className="badge old">старая</span> : null}
                     {isInstalled ? (
                       <span className="badge release">
                         <IconCheck size={11} />
@@ -241,7 +251,14 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
                     <button
                       className="btn sm"
                       onClick={() => install(v.id)}
-                      title={loader === "vanilla" ? "Установить версию" : `Установить ${loader}`}
+                      disabled={forgeBlocked}
+                      title={
+                        forgeBlocked
+                          ? "Forge доступен только для релизов — выберите Vanilla или Fabric"
+                          : loader === "vanilla"
+                            ? "Установить версию"
+                            : `Установить ${loader}`
+                      }
                     >
                       <IconDownload size={14} />
                       Установить
@@ -252,8 +269,9 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
             </div>
           )}
           <div className="hint">
-            Размер складывается из клиентского JAR, библиотек и ассетов. Загрузчик можно сменить
-            перед установкой: Fabric, NeoForge, Forge или Quilt ставятся поверх выбранной версии.
+            Размер — клиентский JAR, библиотеки и ассеты, считается до установки. Дата — релиз
+            версии. Загрузчик можно сменить перед установкой: Fabric или Forge ставятся поверх
+            выбранной версии. Forge доступен только для релизов, снапшоты — Vanilla и Fabric.
           </div>
         </div>
         <div className="col">
