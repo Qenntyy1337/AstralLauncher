@@ -899,6 +899,12 @@ pub fn list_installed(root: &PathBuf) -> Vec<InstalledVersion> {
                 .inherits()
                 .map(|p| client_jar_path(&root_dir, &p).exists())
                 .unwrap_or(false);
+        // показываем только реально запускаемые версии: запись без своего jar
+        // (или jar родителя по inheritsFrom) всё равно не запустится — например
+        // родительская ванила, установленная неявно вместе с загрузчиком
+        if !has_jar {
+            continue;
+        }
         out.push(InstalledVersion {
             id: dir_name,
             loader: model.detect_loader(),

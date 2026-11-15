@@ -34,12 +34,22 @@ fn expand_placeholders(
     result
 }
 
+/// Экранирование одного аргумента для @argfile java-лаунчера:
+/// аргументы с пробелами/кавычками берём в кавычки, внутри — экранируем
+/// обратные слэши и кавычки
+fn quote_argfile(s: &str) -> String {
+    if s.contains(' ') || s.contains('"') {
+        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    } else {
+        s.to_string()
+    }
+}
+
 fn expand_args(
     parts: &[version::ArgPart],
     features: &BTreeMap<String, bool>,
     map: &BTreeMap<String, String>,
-) -> Vec<String> {
-    let mut out = Vec::new();
+) -> Vec<String> {    let mut out = Vec::new();
     for part in parts {
         match part {
             version::ArgPart::Plain(s) => out.push(expand_placeholders(s, map)),
@@ -262,8 +272,36 @@ pub async fn launch(
     );
 
     let mut cmd = tokio::process::Command::new(&java_exe);
-    cmd.args(&args)
-        .current_dir(&game_dir)
+    // Длинные командные строки (сотни библиотек в -classpath) упираются в
+    // лимит Windows ~32К символов (os error 206) — упаковываем аргументы в
+    // @argfile, который поддерживается java-лаунчером начиная с Java 9
+    let cmdline_len: usize = args.iter().map(|a| a.len() + 1).sum();
+    if cmdline_len > 30000 && major >= 9 {
+        let argfile = natives_dir
+            .parent()
+            .unwrap()
+            .join(format!("{}-args.txt", version_id));
+        let body = args
+            .iter()
+            .map(|a| quote_argfile(a))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&argfile, body)
+            .map_err(|e| format!("не удалось записать argfile: {}", e))?;
+        crate::logger::emit_console(
+            &app,
+            "info",
+            "launch",
+            &format!(
+                "командная строка длинная ({} КБ) — аргументы переданы через argfile",
+                cmdline_len / 1024
+            ),
+        );
+        cmd.arg(format!("@{}", argfile.display()));
+    } else {
+        cmd.args(&args);
+    }
+    cmd.current_dir(&game_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .stdin(std::process::Stdio::null());
