@@ -483,7 +483,9 @@ pub async fn read_effective(root: &PathBuf, id: &str) -> Result<VersionJson, Str
     Ok(current)
 }
 
-fn library_artifact_url(lib: &Library) -> Option<(String, String, Option<String>, Option<u64>)> {
+pub(crate) fn library_artifact_url(
+    lib: &Library,
+) -> Option<(String, String, Option<String>, Option<u64>)> {
     if let Some(dl) = &lib.downloads {
         if let Some(a) = &dl.artifact {
             let path = a
@@ -501,6 +503,61 @@ fn library_artifact_url(lib: &Library) -> Option<(String, String, Option<String>
     let base = lib.url.clone()?;
     let url = format!("{}{}", if base.ends_with('/') { base } else { format!("{}/", base) }, path);
     Some((path, url, None, None))
+}
+
+/// Список скачивания для всех библиотек модели (включая natives-windows
+/// классификаторы). Используется при установке и для самовосстановления
+/// недостающих библиотек при запуске.
+pub fn collect_library_items(
+    model: &VersionJson,
+    root: &PathBuf,
+) -> (Vec<DownloadItem>, Vec<PathBuf>) {
+    let features = model.active_features();
+    let mut items: Vec<DownloadItem> = Vec::new();
+    let mut natives_jars: Vec<PathBuf> = Vec::new();
+    for lib in &model.libraries {
+        if !eval_rules(&lib.rules, &features) {
+            continue;
+        }
+        if let Some((path, url, sha1, size)) = library_artifact_url(lib) {
+            items.push(DownloadItem {
+                url,
+                dest: root.join("libraries").join(&path),
+                sha1,
+                size,
+            });
+        }
+        if let Some(natives) = &lib.natives {
+            if let Some(key) = natives.get("natives-windows") {
+                if let Some(dl) = &lib.downloads {
+                    if let Some(classifiers) = &dl.classifiers {
+                        if let Some(nat) = classifiers.get(key) {
+                            if let Some(url) = &nat.url {
+                                let path = nat.path.clone().unwrap_or_else(|| {
+                                    maven_path_from_name(&format!(
+                                        "{}:{}:{}:{}",
+                                        lib.name.split(':').next().unwrap_or(""),
+                                        lib.name.split(':').nth(1).unwrap_or(""),
+                                        lib.name.split(':').nth(2).unwrap_or(""),
+                                        "natives-windows"
+                                    ))
+                                });
+                                let dest = root.join("libraries").join(&path);
+                                natives_jars.push(dest.clone());
+                                items.push(DownloadItem {
+                                    url: url.clone(),
+                                    dest,
+                                    sha1: nat.sha1.clone(),
+                                    size: nat.size,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (items, natives_jars)
 }
 
 pub async fn size_from_model(model: &VersionJson) -> SizeBreakdown {
@@ -614,10 +671,11 @@ pub async fn install_version(
     }
 
     let effective = merge_models(&loader_json, &base, version_id);
-    let features = effective.active_features();
 
-    let mut items: Vec<DownloadItem> = Vec::new();
-    let mut natives_jars: Vec<PathBuf> = Vec::new();
+    // библиотеки (включая natives-классификаторы) собираются одной функцией —
+    // той же самой, что и самовосстановление при запуске
+    let (lib_items, natives_jars) = collect_library_items(&effective, root);
+    let mut items: Vec<DownloadItem> = lib_items;
 
     if let Some(client) = effective.client_artifact() {
         if let Some(url) = client.url {
@@ -634,49 +692,6 @@ pub async fn install_version(
                 sha1: client.sha1,
                 size: client.size,
             });
-        }
-    }
-
-    for lib in &effective.libraries {
-        if !eval_rules(&lib.rules, &features) {
-            continue;
-        }
-        if let Some((path, url, sha1, size)) = library_artifact_url(lib) {
-            items.push(DownloadItem {
-                url,
-                dest: root.join("libraries").join(&path),
-                sha1,
-                size,
-            });
-        }
-        if let Some(natives) = &lib.natives {
-            if let Some(key) = natives.get("natives-windows") {
-                if let Some(dl) = &lib.downloads {
-                    if let Some(classifiers) = &dl.classifiers {
-                        if let Some(nat) = classifiers.get(key) {
-                            if let Some(url) = &nat.url {
-                                let path = nat.path.clone().unwrap_or_else(|| {
-                                    maven_path_from_name(&format!(
-                                        "{}:{}:{}:{}",
-                                        lib.name.split(':').next().unwrap_or(""),
-                                        lib.name.split(':').nth(1).unwrap_or(""),
-                                        lib.name.split(':').nth(2).unwrap_or(""),
-                                        "natives-windows"
-                                    ))
-                                });
-                                let dest = root.join("libraries").join(&path);
-                                natives_jars.push(dest.clone());
-                                items.push(DownloadItem {
-                                    url: url.clone(),
-                                    dest,
-                                    sha1: nat.sha1.clone(),
-                                    size: nat.size,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 

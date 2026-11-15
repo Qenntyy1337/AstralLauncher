@@ -116,6 +116,31 @@ pub async fn launch(
         return Err(format!("файл версии {} не найден, установите её заново", version_id));
     }
 
+    // Самовосстановление библиотек: если какие-то jar отсутствуют (например,
+    // профиль был установлен старой сборкой лаунчера, которая молча пропускала
+    // библиотеки без downloads.artifact), докачиваем их перед запуском — иначе
+    // они тихо выпадут из classpath и main-класс не найдётся
+    let (lib_items, _) = version::collect_library_items(&model, &root);
+    let missing: Vec<crate::download::DownloadItem> =
+        lib_items.into_iter().filter(|it| !it.dest.is_file()).collect();
+    if !missing.is_empty() {
+        crate::logger::emit_console(
+            &app,
+            "info",
+            "launch",
+            &format!(
+                "Проверка файлов: не хватает {} библиотек — докачиваю",
+                missing.len()
+            ),
+        );
+        let job = std::sync::Arc::new(crate::state::JobState::new());
+        let job_id = crate::util::unique_id("job");
+        crate::download::download_all(app, &job, &job_id, "Проверка файлов", missing)
+            .await
+            .map_err(|e| format!("не удалось докачать библиотеки: {}", e))?;
+        crate::logger::emit_console(&app, "info", "launch", "библиотеки на месте, запускаю");
+    }
+
     let game_dir = root.join("minecraft");
     ensure_dir(&game_dir)?;
     let natives_dir = root.join("versions").join(version_id).join("natives");
