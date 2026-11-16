@@ -289,3 +289,13 @@ export function IconChevron(props: IconProps) {
     </Svg>
   );
 }
+
+export function IconCube(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 2 21 7v10l-9 5-9-5V7l9-5z" />
+      <path d="M12 22V12" />
+      <path d="m3 7 9 5 9-5" />
+    </Svg>
+  );
+}

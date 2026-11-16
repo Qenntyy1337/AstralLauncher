@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { IconCancel, IconChevron } from "../icons";
 
 export function ProgressBar({ value, className }: { value: number; className?: string }) {
@@ -131,11 +132,13 @@ export function Dropdown({
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!ref.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -160,7 +163,7 @@ export function Dropdown({
       const menuH = Math.min(options.length * 32 + 14, 300);
       const fitsBelow = r.bottom + menuH + 8 <= window.innerHeight;
       setRect({
-        left: r.left,
+        left: Math.max(8, Math.min(r.left, window.innerWidth - r.width - 8)),
         top: fitsBelow ? r.bottom + 6 : Math.max(8, r.top - menuH - 6),
         width: r.width,
       });
@@ -181,23 +184,30 @@ export function Dropdown({
         <span className="dd-label">{current ? current.label : ""}</span>
         <IconChevron size={14} className={open ? "dd-chev open" : "dd-chev"} />
       </button>
-      {open && rect ? (
-        <div className="dd-menu" style={{ left: rect.left, top: rect.top, width: rect.width }}>
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              className={o.value === value ? "dd-item active" : "dd-item"}
-              onClick={() => {
-                setOpen(false);
-                onChange(o.value);
-              }}
+      {open && rect
+        ? createPortal(
+            <div
+              ref={menuRef}
+              className="dd-menu"
+              style={{ left: rect.left, top: rect.top, width: rect.width }}
             >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
+              {options.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  className={o.value === value ? "dd-item active" : "dd-item"}
+                  onClick={() => {
+                    setOpen(false);
+                    onChange(o.value);
+                  }}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

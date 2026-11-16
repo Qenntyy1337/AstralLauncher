@@ -5,7 +5,7 @@ import { api, formatBytes, formatSpeed, formatEta } from "./api";
 import { setLang, t, tMsg } from "./i18n";
 import { sounds } from "./sounds";
 import type { Config, ConsoleEntry, ProgressPayload, TaskFinished, LaunchInfo, GameExitEvent } from "./types";import {
-  IconPlay,
+  IconCube,
   IconMods,
   IconSettings,
   IconConsole,
@@ -30,7 +30,7 @@ interface Toast {
 }
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: "play", label: "tab.play", icon: <IconPlay size={21} /> },
+  { id: "play", label: "tab.play", icon: <IconCube size={21} /> },
   { id: "mods", label: "tab.mods", icon: <IconMods size={21} /> },
   { id: "settings", label: "tab.settings", icon: <IconSettings size={21} /> },
   { id: "console", label: "tab.console", icon: <IconConsole size={21} /> },
