@@ -253,6 +253,16 @@ export function IconStar(props: IconProps) {
   );
 }
 
+export function IconStats(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" />
+    </Svg>
+  );
+}
+
 export function LogoMark({ size = 28 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true">

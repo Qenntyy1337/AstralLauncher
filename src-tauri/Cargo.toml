@@ -1,6 +1,6 @@
 [package]
 name = "astral-launcher"
-version = "1.0.0"
+version = "1.0.1"
 description = "AstralLauncher - modern Minecraft launcher"
 authors = ["AstralLauncher"]
 edition = "2021"

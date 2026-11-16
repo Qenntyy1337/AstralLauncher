@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ConsoleEntry } from "../types";
-import { IconSearch, IconInfo, IconWarn, IconError } from "../icons";
+import { api } from "../api";
+import { t } from "../i18n";
+import { IconSearch, IconInfo, IconWarn, IconError, IconFolder } from "../icons";
 
 interface ConsoleTabProps {
   logs: ConsoleEntry[];
@@ -69,8 +71,8 @@ export default function ConsoleTab({ logs, onClear }: ConsoleTabProps) {
 
   return (
     <div className="console-wrap">
-      <div className="page-title">Консоль</div>
-      <div className="page-subtitle">Системные события, логи игры, предупреждения и ошибки</div>
+      <div className="page-title">{t("console.title")}</div>
+      <div className="page-subtitle">{t("console.subtitle")}</div>
       <div className="console-toolbar">
         <div className="row" style={{ gap: 6 }}>
           {LEVELS.map((lv) => (
@@ -87,7 +89,7 @@ export default function ConsoleTab({ logs, onClear }: ConsoleTabProps) {
           <IconSearch size={15} />
           <input
             className="input"
-            placeholder="Фильтр по тексту"
+            placeholder={t("console.filterText")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -98,17 +100,21 @@ export default function ConsoleTab({ logs, onClear }: ConsoleTabProps) {
             checked={autoscroll}
             onChange={(e) => setAutoscroll(e.target.checked)}
           />
-          Автопрокрутка
+          {t("console.autoscroll")}
         </label>
         <span style={{ flex: 1 }} />
-        <button className="btn sm" onClick={copyAll} title="Копировать всё">
-          Копировать
+        <button className="btn sm" onClick={() => api.openLogsDir().catch(() => {})} title={t("console.openLogs")}>
+          <IconFolder size={13} />
+          {t("console.openLogs")}
         </button>
-        <button className="btn sm" onClick={exportLogs} title="Сохранить лог в файл">
-          Экспорт
+        <button className="btn sm" onClick={copyAll} title={t("console.copy")}>
+          {t("console.copy")}
+        </button>
+        <button className="btn sm" onClick={exportLogs} title={t("console.export")}>
+          {t("console.export")}
         </button>
         <button className="btn sm danger" onClick={onClear}>
-          Очистить
+          {t("console.clear")}
         </button>
       </div>
       <div className="console-list" ref={listRef}>

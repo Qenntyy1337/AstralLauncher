@@ -13,6 +13,7 @@ mod loaders;
 mod logger;
 mod modrinth;
 mod state;
+mod stats;
 mod util;
 mod version;
 
@@ -394,6 +395,206 @@ fn cancel_job(state: State<'_, AppState>, job_id: String) -> bool {
     state.cancel_job(&job_id)
 }
 
+// ===== 1.0.1: статистика, диагностика, локальные моды, модпаки, обновления =====
+
+#[tauri::command]
+fn get_play_stats(state: State<'_, AppState>) -> stats::PlayStats {
+    let root = state.config.lock().unwrap().root();
+    stats::load(&root)
+}
+
+#[tauri::command]
+fn get_launcher_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateCheck {
+    pub current: String,
+    pub latest: String,
+    pub update_available: bool,
+    pub notes: String,
+    pub url: String,
+}
+
+// Манифест обновлений: {"latest": "1.0.2", "notes": "...", "url": "https://..."}
+const UPDATE_MANIFEST: &str =
+    "https://raw.githubusercontent.com/astrallauncher/astrallauncher/main/latest.json";
+
+#[tauri::command]
+async fn check_launcher_update() -> Result<UpdateCheck, String> {
+    let value = http::get_json(UPDATE_MANIFEST).await?;
+    let latest = value
+        .get("latest")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let notes = value
+        .get("notes")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let url = value
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    let parse = |s: &str| -> Vec<u32> {
+        s.split('.')
+            .map(|p| p.trim().parse().unwrap_or(0))
+            .collect()
+    };
+    let (c, l) = (parse(&current), parse(&latest));
+    let update_available = !latest.is_empty()
+        && (l.len() > c.len() || c.iter().zip(l.iter()).any(|(a, b)| b > a));
+    Ok(UpdateCheck {
+        current,
+        latest,
+        update_available,
+        notes,
+        url,
+    })
+}
+
+#[tauri::command]
+fn get_system_ram_mb() -> Result<u64, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let out = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory",
+            ])
+            .creation_flags_cfg()
+            .output()
+            .map_err(|e| e.to_string())?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let bytes: u64 = text.trim().parse().map_err(|_| "не удалось определить ОЗУ".to_string())?;
+        Ok(bytes / (1024 * 1024))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let text = std::fs::read_to_string("/proc/meminfo").map_err(|e| e.to_string())?;
+        for line in text.lines() {
+            if let Some(rest) = line.strip_prefix("MemTotal:") {
+                let kb: u64 = rest
+                    .trim()
+                    .trim_end_matches("kB")
+                    .trim()
+                    .parse()
+                    .unwrap_or(0);
+                return Ok(kb / 1024);
+            }
+        }
+        Err("не удалось определить ОЗУ".to_string())
+    }
+}
+
+trait CreationFlagsLib {
+    fn creation_flags_cfg(&mut self) -> &mut Self;
+}
+
+#[cfg(windows)]
+impl CreationFlagsLib for std::process::Command {
+    fn creation_flags_cfg(&mut self) -> &mut Self {
+        use std::os::windows::process::CommandExt;
+        self.creation_flags(0x08000000)
+    }
+}
+
+#[cfg(not(windows))]
+impl CreationFlagsLib for std::process::Command {
+    fn creation_flags_cfg(&mut self) -> &mut Self {
+        self
+    }
+}
+
+#[tauri::command]
+fn reveal_path(path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .args(["/select,", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("доступно только на Windows".to_string())
+    }
+}
+
+#[tauri::command]
+fn open_logs_dir(state: State<'_, AppState>) -> Result<(), String> {
+    let root = state.config.lock().unwrap().root();
+    let dir = root.join("logs");
+    let _ = std::fs::create_dir_all(&dir);
+    open_folder(dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn install_local_mod_cmd(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
+    let src = PathBuf::from(path.trim());
+    if !src.is_file() {
+        return Err("файл не найден".to_string());
+    }
+    let name = src
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    if !name.to_lowercase().ends_with(".jar") {
+        return Err("перетащите .jar-файл мода".to_string());
+    }
+    if src.metadata().map(|m| m.len()).unwrap_or(0) > 512 * 1024 * 1024 {
+        return Err("файл слишком большой (> 512 МБ)".to_string());
+    }
+    let root = state.config.lock().unwrap().root();
+    let dest_dir = root.join("minecraft").join("mods");
+    std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+    let dest = dest_dir.join(&name);
+    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    crate::logger::emit_console(
+        &app,
+        "info",
+        "mods",
+        &format!("Локальный мод установлен: {}", name),
+    );
+    Ok(name)
+}
+
+#[tauri::command]
+async fn install_mrpack_cmd(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
+    let src = PathBuf::from(path.trim());
+    if !src.is_file() {
+        return Err("файл модпака не найден".to_string());
+    }
+    if !src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("mrpack"))
+        .unwrap_or(false)
+    {
+        return Err("выберите файл модпака .mrpack".to_string());
+    }
+    let root = state.config.lock().unwrap().root();
+    spawn_job(&app, state.inner(), "install-mrpack", move |app, job, job_id| {
+        Box::pin(async move { modrinth::install_mrpack(&app, &root, &job, &job_id, &src).await })
+    })
+}
+
 const WALLPAPER_EXTS: [&str; 6] = ["jpg", "jpeg", "png", "webp", "bmp", "gif"];
 
 fn wallpaper_mime(ext: &str) -> &'static str {
@@ -497,7 +698,15 @@ pub fn run() {
             stop_game_cmd,
             cancel_job,
             set_custom_wallpaper,
-            get_custom_wallpaper
+            get_custom_wallpaper,
+            get_play_stats,
+            get_launcher_version,
+            check_launcher_update,
+            get_system_ram_mb,
+            reveal_path,
+            open_logs_dir,
+            install_local_mod_cmd,
+            install_mrpack_cmd
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AstralLauncher");

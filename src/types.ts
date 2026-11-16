@@ -25,6 +25,44 @@ export interface Config {
   wallpaper_blur: number;
   wallpaper_dim: number;
   play_loader: string;
+  aurora_intensity: number;
+  aurora_hue: number;
+  accent: string;
+  sounds_enabled: boolean;
+  language: string;
+}
+
+export interface LaunchRecord {
+  ts_ms: number;
+  version: string;
+  account: string;
+  duration_sec: number;
+}
+
+export interface PlayStats {
+  history: LaunchRecord[];
+  per_version_sec: Record<string, number>;
+  total_sec: number;
+}
+
+export interface CrashInfo {
+  file: string;
+  description: string;
+  hint: string;
+}
+
+export interface GameExitEvent {
+  pid: number;
+  code: number;
+  crash: CrashInfo | null;
+}
+
+export interface UpdateCheck {
+  current: string;
+  latest: string;
+  update_available: boolean;
+  notes: string;
+  url: string;
 }
 
 export interface ManifestVersion {

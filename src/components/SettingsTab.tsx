@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, formatBytes } from "../api";
-import type { Config, DeviceCode, JavaCandidate, RootInfo } from "../types";
+import { t } from "../i18n";
+import type { Config, DeviceCode, JavaCandidate, RootInfo, UpdateCheck } from "../types";
 import {
   IconFolder,
   IconDownload,
@@ -12,6 +13,9 @@ import {
   IconExternal,
   IconCheck,
   IconImage,
+  IconInfo,
+  IconStats,
+  IconRefresh,
 } from "../icons";
 import { Spinner } from "./common";
 
@@ -30,6 +34,42 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
   const [msClient, setMsClient] = useState(config.ms_client_id);
   const [deviceCode, setDeviceCode] = useState<DeviceCode | null>(null);
   const [msBusy, setMsBusy] = useState(false);
+  const [launcherVersion, setLauncherVersion] = useState("");
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheck | null>(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
+
+  useEffect(() => {
+    api.getLauncherVersion().then(setLauncherVersion).catch(() => setLauncherVersion("1.0.1"));
+  }, []);
+
+  const autoRam = () => {
+    api
+      .getSystemRamMb()
+      .then((totalMb) => {
+        // четверть объёма ОЗУ, округлённая к 512 МБ, в пределах слайдера
+        const raw = Math.round(totalMb / 4 / 512) * 512;
+        const rec = Math.max(1024, Math.min(32768, raw));
+        patchConfig({ ram_mb: rec });
+        showToast(`${t("settings.ramRecommended")}: ${rec} МБ (ПК: ${formatBytes(totalMb * 1024 * 1024)})`, true);
+      })
+      .catch(() => showToast(t("settings.ramUnknown"), false));
+  };
+
+  const checkUpdates = () => {
+    setUpdateBusy(true);
+    api
+      .checkUpdate()
+      .then((u) => {
+        setUpdateInfo(u);
+        if (!u.update_available) {
+          showToast(t("settings.upToDate"), true);
+        } else {
+          showToast(`${t("settings.newVersion")}: ${u.latest}`, true);
+        }
+      })
+      .catch(() => showToast(t("settings.updateFailed"), false))
+      .finally(() => setUpdateBusy(false));
+  };
 
   useEffect(() => {
     setRootPath(config.root_dir);
@@ -52,7 +92,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
     api
       .setRootPath(rootPath)
       .then((cfg) => {
-        showToast(`Каталог установки: ${cfg.root_dir}`, true);
+        showToast(`${t("settings.dirTitle")}: ${cfg.root_dir}`, true);
         reloadRoot();
       })
       .catch((e) => showToast(String(e), false));
@@ -77,7 +117,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
       if (typeof picked === "string") {
         const cfg = await api.setCustomWallpaper(picked);
         patchConfig({ wallpaper: cfg.wallpaper });
-        showToast("Обои применены", true);
+        showToast(t("settings.wallpaperApplied"), true);
       }
     } catch (e) {
       showToast(String(e), false);
@@ -95,14 +135,14 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
       .then((cfg) => {
         setNewNick("");
         patchConfig(cfg);
-        showToast("Аккаунт добавлен", true);
+        showToast(t("settings.accountAdded"), true);
       })
       .catch((e) => showToast(String(e), false));
   };
 
   const startMsLogin = () => {
     if (!msClient.trim()) {
-      showToast("Сначала укажите MS Azure client_id", false);
+      showToast(t("settings.msClientNeeded"), false);
       return;
     }
     setMsBusy(true);
@@ -138,13 +178,13 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
 
   return (
     <div>
-      <div className="page-title">Настройки</div>
-      <div className="page-subtitle">Каталог установки, память, Java и аккаунты</div>
+      <div className="page-title">{t("settings.title")}</div>
+      <div className="page-subtitle">{t("settings.subtitle")}</div>
 
       <div className="card">
         <div className="card-title">
           <IconFolder size={16} />
-          Каталог установки
+          {t("settings.dirTitle")}
         </div>
         <div className="row wrap">
           <input
@@ -156,33 +196,30 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
           />
           <button className="btn" onClick={browse}>
             <IconFolder size={15} />
-            Обзор
+            {t("settings.browse")}
           </button>
           <button className="btn primary" onClick={applyRoot}>
             <IconCheck size={15} />
-            Применить
+            {t("settings.apply")}
           </button>
           <button className="btn" onClick={openRoot}>
             <IconExternal size={15} />
-            Открыть папку
+            {t("settings.openFolder")}
           </button>
         </div>
         {rootInfo ? (
           <div className="hint" style={{ marginTop: 8 }}>
-            Версий: {rootInfo.versions} | Модов: {rootInfo.mods} | Общий объём:{" "}
-            {formatBytes(rootInfo.total_size_bytes)}
+            {t("settings.versions")}: {rootInfo.versions} | {t("settings.mods")}: {rootInfo.mods} |{" "}
+            {t("settings.totalSize")}: {formatBytes(rootInfo.total_size_bytes)}
           </div>
         ) : null}
-        <div className="hint">
-          Все версии, библиотеки, ассеты, моды и конфигурация хранятся здесь. При смене пути новые
-          файлы будут устанавливаться в новый каталог, конфигурация переносится автоматически.
-        </div>
+        <div className="hint">{t("settings.dirHint")}</div>
       </div>
 
       <div className="card">
         <div className="card-title">
           <IconCPU size={16} />
-          Память и Java
+          {t("settings.memoryJava")}
         </div>
         <div className="slider-row">
           <span style={{ color: "var(--text-faint)", fontSize: 12 }}>1024 МБ</span>
@@ -196,9 +233,13 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
           />
           <span style={{ color: "var(--text-faint)", fontSize: 12 }}>32 ГБ</span>
           <span className="slider-value">{config.ram_mb} МБ</span>
+          <button className="btn sm" onClick={autoRam} title={t("settings.autoRam")}>
+            <IconStats size={13} />
+            {t("settings.autoRam")}
+          </button>
         </div>
         <div className="divider" />
-        <span className="label">Путь к Java (пусто = автоопределение)</span>
+        <span className="label">{t("settings.javaPath")}</span>
         <div className="row wrap">
           <input
             className="input"
@@ -237,31 +278,42 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
       </div>
 
       <div className="card">
-        <div className="card-title">Внешний вид</div>
+        <div className="card-title">{t("settings.appearance")}</div>
         <div className="row wrap" style={{ alignItems: "flex-end" }}>
           <div>
-            <span className="label">Фон лаунчера</span>
+            <span className="label">{t("settings.wallpaper")}</span>
             <select
               className="select"
               style={{ minWidth: 220 }}
               value={config.wallpaper || "aurora"}
               onChange={(e) => patchConfig({ wallpaper: e.target.value })}
             >
-              <option value="aurora">Полярное сияние</option>
-              <option value="nebula">Туманность</option>
-              <option value="ember">Угольки</option>
-              <option value="custom">Свои обои</option>
-              <option value="none">Без обоев</option>
+              <option value="aurora">{t("settings.wpAurora")}</option>
+              <option value="nebula">{t("settings.wpNebula")}</option>
+              <option value="ember">{t("settings.wpEmber")}</option>
+              <option value="custom">{t("settings.wpCustom")}</option>
+              <option value="none">{t("settings.wpNone")}</option>
+            </select>
+          </div>
+          <div>
+            <span className="label">{t("settings.language")}</span>
+            <select
+              className="select"
+              value={config.language || "ru"}
+              onChange={(e) => patchConfig({ language: e.target.value })}
+            >
+              <option value="ru">Русский</option>
+              <option value="en">English</option>
             </select>
           </div>
           <button className="btn" onClick={pickWallpaper}>
             <IconImage size={15} />
-            Загрузить свои обои…
+            {t("settings.uploadWallpaper")}
           </button>
         </div>
         <div className="row wrap" style={{ marginTop: 14, gap: 24 }}>
           <div style={{ minWidth: 240 }}>
-            <span className="label">Размытие фона: {config.wallpaper_blur ?? 18} px</span>
+            <span className="label">{t("settings.blur")}: {config.wallpaper_blur ?? 18} px</span>
             <input
               type="range"
               min={0}
@@ -273,7 +325,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
             />
           </div>
           <div style={{ minWidth: 240 }}>
-            <span className="label">Затемнение фона: {config.wallpaper_dim ?? 40}%</span>
+            <span className="label">{t("settings.dim")}: {config.wallpaper_dim ?? 40}%</span>
             <input
               type="range"
               min={10}
@@ -285,17 +337,73 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
             />
           </div>
         </div>
+        <div className="row wrap" style={{ marginTop: 14, gap: 24 }}>
+          <div style={{ minWidth: 240 }}>
+            <span className="label">{t("settings.auroraIntensity")}: {config.aurora_intensity ?? 55}%</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={config.aurora_intensity ?? 55}
+              onChange={(e) => patchConfig({ aurora_intensity: Number(e.target.value) })}
+              style={{ width: "100%" }}
+            />
+          </div>
+          <div style={{ minWidth: 240 }}>
+            <span className="label">{t("settings.auroraHue")}: {config.aurora_hue ?? 0}°</span>
+            <input
+              type="range"
+              min={-180}
+              max={180}
+              step={5}
+              value={config.aurora_hue ?? 0}
+              onChange={(e) => patchConfig({ aurora_hue: Number(e.target.value) })}
+              style={{ width: "100%" }}
+            />
+          </div>
+        </div>
+        <div className="divider" />
+        <span className="label">{t("settings.accentColor")}</span>
+        <div className="row wrap" style={{ gap: 8, marginTop: 6 }}>
+          {[
+            { id: "violet", color: "#7b6cff", label: t("settings.accentViolet") },
+            { id: "blue", color: "#4f8bff", label: t("settings.accentBlue") },
+            { id: "green", color: "#2ec27e", label: t("settings.accentGreen") },
+            { id: "pink", color: "#e35fb2", label: t("settings.accentPink") },
+            { id: "amber", color: "#d99a3d", label: t("settings.accentAmber") },
+          ].map((a) => (
+            <button
+              key={a.id}
+              className={`accent-swatch ${(config.accent || "violet") === a.id ? "active" : ""}`}
+              title={a.label}
+              onClick={() => patchConfig({ accent: a.id })}
+            >
+              <span className="accent-dot" style={{ background: a.color }} />
+              {a.label}
+            </button>
+          ))}
+        </div>
+        <div className="divider" />
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={config.sounds_enabled ?? true}
+            onChange={(e) => patchConfig({ sounds_enabled: e.target.checked })}
+          />
+          {t("settings.sounds")}
+        </label>
+        <div className="hint">{t("settings.soundsHint")}</div>
         <div className="hint" style={{ marginTop: 8 }}>
-          Свои обои (PNG/JPG/WebP/GIF до 12 МБ) копируются в каталог лаунчера и применяются сразу.
-          Слайдеры регулируют силу размытия и затемнения, чтобы текст оставался читаемым.
+          {t("settings.appearanceHint")}
         </div>
       </div>
 
       <div className="card">
-        <div className="card-title">Окно игры</div>
+        <div className="card-title">{t("settings.gameWindow")}</div>
         <div className="row wrap">
           <div>
-            <span className="label">Ширина (0 = авто)</span>
+            <span className="label">{t("settings.width")}</span>
             <input
               className="input"
               type="number"
@@ -305,7 +413,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
             />
           </div>
           <div>
-            <span className="label">Высота</span>
+            <span className="label">{t("settings.height")}</span>
             <input
               className="input"
               type="number"
@@ -320,16 +428,16 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
               checked={config.keep_launcher_open}
               onChange={(e) => patchConfig({ keep_launcher_open: e.target.checked })}
             />
-            Держать лаунчер открытым во время игры
+            {t("settings.keepOpen")}
           </label>
         </div>
       </div>
 
       <div className="card">
-        <div className="card-title">Аргументы запуска</div>
+        <div className="card-title">{t("settings.args")}</div>
         <div className="row wrap" style={{ gap: 14 }}>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <span className="label">Дополнительные JVM-аргументы (по одному в строке)</span>
+            <span className="label">{t("settings.jvmArgs")}</span>
             <textarea
               className="input"
               style={{ width: "100%" }}
@@ -342,7 +450,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
             />
           </div>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <span className="label">Дополнительные аргументы игры</span>
+            <span className="label">{t("settings.gameArgs")}</span>
             <textarea
               className="input"
               style={{ width: "100%" }}
@@ -360,7 +468,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
       <div className="card">
         <div className="card-title">
           <IconUser size={16} />
-          Аккаунты
+          {t("settings.accounts")}
         </div>
         {config.accounts.length > 0 ? (
           <div className="list" style={{ maxHeight: 220, marginBottom: 12 }}>
@@ -377,10 +485,10 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{a.username}</div>
                   <div className="meta">{a.kind === "microsoft" ? "Microsoft" : "Офлайн"}</div>
                 </div>
-                {a.id === config.active_account_id ? <span className="badge release">активен</span> : null}
+                {a.id === config.active_account_id ? <span className="badge release">{t("settings.active")}</span> : null}
                 <button
                   className="btn sm danger"
-                  title="Удалить аккаунт"
+                  title={t("settings.delete")}
                   onClick={(e) => {
                     e.stopPropagation();
                     api.removeAccount(a.id).then(patchConfig).catch(() => {});
@@ -393,14 +501,14 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
           </div>
         ) : (
           <div className="hint" style={{ marginBottom: 12 }}>
-            Нет аккаунтов. Добавьте офлайн-аккаунт или войдите через Microsoft.
+            {t("settings.noAccounts")}
           </div>
         )}
         <div className="row wrap" style={{ marginBottom: 8 }}>
           <input
             className="input"
             style={{ width: 200 }}
-            placeholder="Ник для офлайн-режима"
+            placeholder={t("settings.nickPlaceholder")}
             value={newNick}
             onChange={(e) => setNewNick(e.target.value)}
             onKeyDown={(e) => {
@@ -409,11 +517,11 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
           />
           <button className="btn" onClick={addOffline}>
             <IconPlus size={14} />
-            Добавить офлайн
+            {t("settings.addOffline")}
           </button>
         </div>
         <div className="divider" />
-        <span className="label">MS Azure client_id (для входа через Microsoft)</span>
+        <span className="label">{t("settings.msClientId")}</span>
         <div className="row wrap">
           <input
             className="input"
@@ -424,12 +532,11 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
           />
           <button className="btn primary" onClick={startMsLogin} disabled={msBusy}>
             {msBusy ? <Spinner /> : null}
-            Войти через Microsoft
+            {t("settings.msLogin")}
           </button>
         </div>
         <div className="hint">
-          Вход выполняется через официальное device code flow: введите код на странице Microsoft,
-          затем нажмите «Я ввёл код». Токены хранятся локально в конфигурации лаунчера.
+          {t("settings.msHint")}
         </div>
         {activeAccount?.kind === "microsoft" ? (
           <div className="hint">
@@ -438,12 +545,45 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
         ) : null}
       </div>
 
+      <div className="card">
+        <div className="card-title">
+          <IconInfo size={16} />
+          {t("settings.about")}
+        </div>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>AstralLauncher {launcherVersion}</div>
+            <div className="meta" style={{ color: "var(--text-faint)", fontSize: 12 }}>
+              Minecraft launcher · 2026
+            </div>
+          </div>
+          <button className="btn" onClick={checkUpdates} disabled={updateBusy}>
+            {updateBusy ? <Spinner /> : <IconRefresh size={14} />}
+            {t("settings.checkUpdates")}
+          </button>
+        </div>
+        {updateInfo && updateInfo.update_available ? (
+          <div className="hint" style={{ marginTop: 8, color: "var(--warn)" }}>
+            {t("settings.newVersion")}: {updateInfo.latest}
+            {updateInfo.notes ? ` — ${updateInfo.notes}` : ""}
+            {updateInfo.url ? (
+              <>
+                {" · "}
+                <a className="link" href={updateInfo.url} target="_blank" rel="noreferrer">
+                  <IconExternal size={12} /> {updateInfo.url}
+                </a>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
       {deviceCode ? (
         <div className="modal-backdrop">
           <div className="modal">
-            <h3>Вход через Microsoft</h3>
+            <h3>{t("settings.msModalTitle")}</h3>
             <div className="desc">
-              Откройте страницу и введите код. Затем нажмите кнопку ниже.
+              {t("settings.msModalDesc")}
             </div>
             <div className="code-box">{deviceCode.user_code}</div>
             <a className="link" href={deviceCode.verification_uri} target="_blank" rel="noreferrer">
@@ -456,7 +596,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
               </button>
               <button className="btn primary" onClick={finishMsLogin} disabled={msBusy}>
                 {msBusy ? <Spinner /> : <IconCheck size={14} />}
-                Я ввёл код
+                {t("settings.msEntered")}
               </button>
             </div>
           </div>

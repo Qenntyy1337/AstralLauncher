@@ -181,12 +181,18 @@ async fn download_one(
         return Ok(());
     }
     let part_path = item.dest.with_extension("part");
+    // докачка при обрыве: если есть недокачанный .part — пробуем продолжить с Range
+    let resume_from: u64 = std::fs::metadata(&part_path).map(|m| m.len()).unwrap_or(0);
     let mut last_err = String::new();
     for attempt in 0u64..3 {
         if job.cancelled() {
             return Err("cancelled".to_string());
         }
-        let resp = match client().get(&item.url).send().await {
+        let mut req = client().get(&item.url);
+        if resume_from > 0 {
+            req = req.header(reqwest::header::RANGE, format!("bytes={}-", resume_from));
+        }
+        let resp = match req.send().await {
             Ok(r) => r,
             Err(e) => {
                 last_err = e.to_string();
@@ -195,23 +201,53 @@ async fn download_one(
                 continue;
             }
         };
-        if !resp.status().is_success() {
-            last_err = format!("HTTP {}", resp.status());
+        let status = resp.status();
+        if !(status.is_success()) {
+            last_err = format!("HTTP {}", status);
             tokio::time::sleep(std::time::Duration::from_millis(400u64 * (attempt + 1)))
                 .await;
             continue;
         }
-        let mut file = match std::fs::File::create(&part_path) {
-            Ok(f) => f,
-            Err(e) => return Err(format!("create {}: {}", part_path.display(), e)),
+        // сервер не поддержал Range (ответ 200 на запрос с Range) — качаем заново
+        let resuming = resume_from > 0 && status == reqwest::StatusCode::PARTIAL_CONTENT;
+        let mut file = if resuming {
+            match std::fs::OpenOptions::new().append(true).open(&part_path) {
+                Ok(f) => f,
+                Err(e) => return Err(format!("append {}: {}", part_path.display(), e)),
+            }
+        } else {
+            match std::fs::File::create(&part_path) {
+                Ok(f) => f,
+                Err(e) => return Err(format!("create {}: {}", part_path.display(), e)),
+            }
         };
         let mut hasher = Sha1::new();
+        // при докачке хэш продолжается с уже скачанной части
+        if resuming {
+            match std::fs::File::open(&part_path) {
+                Ok(mut pf) => {
+                    let mut buf = vec![0u8; 256 * 1024];
+                    loop {
+
+                        match std::io::Read::read(&mut pf, &mut buf) {
+                            Ok(0) => break,
+                            Ok(n) => hasher.update(&buf[..n]),
+                            Err(_) => break,
+                        }
+                    }
+                }
+                Err(_) => {
+                    // не смогли перечитать часть — начнём заново
+                    let _ = std::fs::File::create(&part_path);
+                }
+            }
+        }
         let mut stream = resp.bytes_stream();
         let mut failed = false;
         while let Some(chunk) = stream.next().await {
             if job.cancelled() {
                 drop(file);
-                let _ = std::fs::remove_file(&part_path);
+                // .part сохраняем — следующая попытка продолжит докачку
                 return Err("cancelled".to_string());
             }
             match chunk {
@@ -247,7 +283,11 @@ async fn download_one(
             tracker.file_done();
             return Ok(());
         }
-        let _ = std::fs::remove_file(&part_path);
+        // часть оставляем на диске для докачки следующей попыткой,
+        // но если это была последняя попытка — ошибка выйдет ниже
+        if attempt == 2 {
+            let _ = std::fs::remove_file(&part_path);
+        }
         tokio::time::sleep(std::time::Duration::from_millis(400u64 * (attempt + 1))).await;
     }
     Err(last_err)

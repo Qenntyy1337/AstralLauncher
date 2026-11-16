@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, formatBytes, formatNumber, formatDate } from "../api";
+import { t } from "../i18n";
 import type { SearchHit, Project, ModVersion, FileInfo, Config } from "../types";
 import {
   IconSearch,
@@ -20,11 +21,11 @@ interface ModsTabProps {
   refreshSignal: number;
 }
 
+// «Карты» убраны: в Modrinth-каталоге для миров нет нормальной выдачи
 const TYPES = [
-  { id: "mod", label: "Моды" },
-  { id: "resourcepack", label: "Ресурспаки" },
-  { id: "shader", label: "Шейдеры" },
-  { id: "world", label: "Карты" },
+  { id: "mod", label: "mods.mods" },
+  { id: "resourcepack", label: "mods.resourcepacks" },
+  { id: "shader", label: "mods.shaders" },
 ];
 
 const LOADERS = ["fabric", "forge"];
@@ -82,7 +83,14 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
         setHits((prev) => (newOffset === 0 ? r.hits : [...prev, ...r.hits]));
         setOffset(newOffset);
       })
-      .catch((e) => showToast(String(e), false))
+      .catch((e) => {
+        const msg = String(e);
+        if (msg.includes("нет совместимых версий")) {
+          showToast(t("mods.incompatibleHint"), false);
+        } else {
+          showToast(msg, false);
+        }
+      })
       .finally(() => setLoading(false));
   };
 
@@ -126,7 +134,13 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
     api
       .modrinthInstall(projectId, projectTitle, projectType, v.id, mc, loaderForVersion(v))
       .then((jobId) => startJob(jobId, `Установка: ${projectTitle} ${v.version_number}`))
-      .catch((e) => showToast(String(e), false))
+      .catch((e) => {
+        if (String(e).includes("нет совместимых версий")) {
+          showToast(t("mods.incompatibleHint"), false);
+        } else {
+          showToast(String(e), false);
+        }
+      })
       .finally(() => setBusyCard(null));
   };
 
@@ -135,7 +149,13 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
     api
       .modrinthInstall(hit.project_id, hit.title, hit.project_type || type, null, mc, type === "mod" ? loader : "")
       .then((jobId) => startJob(jobId, `Установка: ${hit.title}`))
-      .catch((e) => showToast(String(e), false))
+      .catch((e) => {
+        if (String(e).includes("нет совместимых версий")) {
+          showToast(t("mods.incompatibleHint"), false);
+        } else {
+          showToast(String(e), false);
+        }
+      })
       .finally(() => setBusyCard(null));
   };
 
@@ -151,20 +171,20 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
 
   return (
     <div>
-      <div className="page-title">Модификации</div>
-      <div className="page-subtitle">Каталог Modrinth: моды, ресурспаки, шейдеры и карты</div>
+      <div className="page-title">{t("mods.title")}</div>
+      <div className="page-subtitle">{t("mods.subtitle")}</div>
       <div className="mods-layout">
         <div>
           <div className="card" style={{ padding: 14 }}>
             <div className="row wrap">
               <div className="row" style={{ gap: 6 }}>
-                {TYPES.map((t) => (
+                {TYPES.map((tp) => (
                   <button
-                    key={t.id}
-                    className={`chip ${type === t.id ? "active" : ""}`}
-                    onClick={() => setType(t.id)}
+                    key={tp.id}
+                    className={`chip ${type === tp.id ? "active" : ""}`}
+                    onClick={() => setType(tp.id)}
                   >
-                    {t.label}
+                    {t(tp.label)}
                   </button>
                 ))}
               </div>
@@ -172,7 +192,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
                 <IconSearch size={15} />
                 <input
                   className="input"
-                  placeholder="Поиск по названию"
+                  placeholder={t("mods.searchPlaceholder")}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => {
@@ -181,7 +201,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
                 />
               </div>
               <select className="select" value={mc} onChange={(e) => setMc(e.target.value)}>
-                <option value="">Версия игры...</option>
+                <option value="">{t("mods.gameVersion")}</option>
                 {releases.map((r) => (
                   <option key={r} value={r}>
                     {r}
@@ -199,7 +219,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
               ) : null}
               <button className="btn primary" onClick={() => search(0)}>
                 <IconSearch size={14} />
-                Найти
+                {t("mods.find")}
               </button>
             </div>
           </div>
@@ -208,7 +228,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
               <Spinner />
             </div>
           ) : hits.length === 0 ? (
-            <EmptyState icon={<IconBox size={28} />} title="Ничего не найдено" hint="Измените запрос или фильтры" />
+            <EmptyState icon={<IconBox size={28} />} title={t("mods.nothingFound")} hint={t("mods.changeFilters")} />
           ) : (
             <>
               <div className="mods-grid">
@@ -245,7 +265,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
                       disabled={busyCard === h.project_id}
                     >
                       <IconDownload size={13} />
-                      Скачать
+                      {t("mods.download")}
                     </button>
                   </div>
                 ))}
@@ -254,7 +274,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
                 <div className="row" style={{ justifyContent: "center", marginTop: 14 }}>
                   <button className="btn" onClick={() => search(offset + 20)} disabled={loading}>
                     {loading ? <Spinner /> : null}
-                    Показать ещё ({formatNumber(total - hits.length)})
+                    {t("mods.showMore")} ({formatNumber(total - hits.length)})
                   </button>
                 </div>
               ) : null}
@@ -264,7 +284,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
         <div className="card">
           <div className="card-title">
             <IconCheck size={16} />
-            Установлено: {TYPES.find((t) => t.id === type)?.label}
+            {t("mods.installedTitle")}: {t(TYPES.find((tp) => tp.id === type)?.label ?? "mods.mods")}
           </div>
           {installedFiles.length === 0 ? (
             <div className="hint">Папка пуста. Скачайте что-нибудь из каталога.</div>
@@ -286,7 +306,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
                     </div>
                     <div style={{ color: "var(--text-faint)", fontSize: 11.5 }}>{formatBytes(f.size_bytes)}</div>
                   </div>
-                  <button className="btn sm danger" title="Удалить" onClick={() => deleteFile(f.name)}>
+                  <button className="btn sm danger" title={t("mods.delete")} onClick={() => deleteFile(f.name)}>
                     <IconTrash size={13} />
                   </button>
                 </div>
@@ -294,7 +314,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
             </div>
           )}
           <div className="hint">
-            Файлы сохраняются в {config.root_dir}\minecraft\{TYPE_DIRS[type]}
+            {t("mods.filesStored")} {config.root_dir}\minecraft\{TYPE_DIRS[type]}
           </div>
         </div>
       </div>
@@ -355,13 +375,13 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
             ) : null}
             <div className="divider" />
             <div>
-              <span className="label">Сборки — нажмите «Скачать» рядом с нужной версией</span>
+              <span className="label">{t("mods.versionsTitle")}</span>
               {versionsList === null ? (
                 <div className="row" style={{ padding: 8, justifyContent: "center" }}>
                   <Spinner />
                 </div>
               ) : versionsList.length === 0 ? (
-                <div className="hint">Нет сборок для выбранных фильтров (игра {mc || "любая"})</div>
+                <div className="hint">{t("mods.noBuilds")} {mc || t("mods.any")})</div>
               ) : (
                 <div className="mod-versions">
                   {versionsList.slice(0, 20).map((v) => (
@@ -381,13 +401,13 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
                         }
                       >
                         <IconDownload size={13} />
-                        Скачать
+                        {t("mods.download")}
                       </button>
                     </div>
                   ))}
                   {versionsList.length > 20 ? (
                     <div className="hint" style={{ marginTop: 6 }}>
-                      Показаны первые 20 из {formatNumber(versionsList.length)} сборок
+                      {t("mods.shownFirst")} {formatNumber(versionsList.length)} {t("mods.builds")}
                     </div>
                   ) : null}
                 </div>

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::download::{download_all, DownloadItem};
@@ -494,4 +494,168 @@ pub fn delete_content_file(root: &PathBuf, project_type: &str, name: &str) -> Re
     } else {
         Err("файл не найден".to_string())
     }
+}
+
+// ===== Модпаки Modrinth (.mrpack) =====
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct MrPackIndex {
+    #[serde(default)]
+    pub format_version: u32,
+    #[serde(default)]
+    pub game: String,
+    #[serde(default)]
+    pub dependencies: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub files: Vec<MrPackFile>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MrPackFile {
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub hashes: Option<serde_json::Value>,
+    #[serde(default)]
+    pub env: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub downloads: Vec<String>,
+    #[serde(default)]
+    pub file_size: u64,
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for e in std::fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
+        let from = e.path();
+        let to = dst.join(e.file_name());
+        if from.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Установка модпака .mrpack: распаковываем архив, качаем моды из index.json
+/// (с проверкой sha1), переносим overrides в minecraft/, сообщаем о зависимостях
+pub async fn install_mrpack(
+    app: &tauri::AppHandle,
+    root: &PathBuf,
+    job: &Arc<JobState>,
+    job_id: &str,
+    archive: &Path,
+) -> Result<String, String> {
+    let tmp = root
+        .join("cache")
+        .join(format!("mrpack-{}", crate::util::unique_id("p")));
+    ensure_dir(&tmp)?;
+    let result = async {
+        crate::logger::emit_console(app, "info", "modrinth", "Распаковка архива модпака…");
+        let app2 = app.clone();
+        let job_id2 = job_id.to_string();
+        let label = "Распаковка модпака".to_string();
+        let arch = archive.to_path_buf();
+        let tmp2 = tmp.clone();
+        let label2 = label.clone();
+        let extracted = tokio::task::spawn_blocking(move || {
+            crate::util::extract_zip(&arch, &tmp2, None, Some(&|d, t| {
+                crate::download::emit_extract_progress(&app2, &job_id2, &label2, d, t)
+            }))
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        extracted?;
+
+        let index_text = std::fs::read_to_string(tmp.join("modrinth.index.json"))
+            .map_err(|_| "это не modrinth-модпак: внутри нет modrinth.index.json".to_string())?;
+        let index: MrPackIndex = serde_json::from_str(&index_text)
+            .map_err(|e| format!("битый modrinth.index.json: {}", e))?;
+
+        let mc_base = root.join("minecraft");
+        let mut items: Vec<DownloadItem> = Vec::new();
+        let mut skipped_client = 0usize;
+        for f in &index.files {
+            if f.path.contains("..") || f.path.starts_with('/') || f.path.contains('\\') {
+                return Err(format!("небезопасный путь в модпаке: {}", f.path));
+            }
+            // env.client == "unsupported" — файл только для сервера
+            if f.env
+                .as_ref()
+                .and_then(|e| e.get("client"))
+                .map(|v| v == "unsupported")
+                .unwrap_or(false)
+            {
+                skipped_client += 1;
+                continue;
+            }
+            let Some(url) = f.downloads.first().cloned() else {
+                continue;
+            };
+            let sha1 = f
+                .hashes
+                .as_ref()
+                .and_then(|h| h.get("sha1"))
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string());
+            items.push(DownloadItem {
+                url,
+                dest: mc_base.join(&f.path),
+                sha1,
+                size: Some(f.file_size),
+            });
+        }
+        crate::logger::emit_console(
+            app,
+            "info",
+            "modrinth",
+            &format!(
+                "Модпак: {} файлов (пропущено серверных: {})",
+                items.len(),
+                skipped_client
+            ),
+        );
+        download_all(app, job, job_id, "Файлы модпака", items).await?;
+
+        // overrides копируем в minecraft/
+        let overrides = tmp.join("overrides");
+        let mut overrides_copied = false;
+        if overrides.is_dir() {
+            copy_dir_recursive(&overrides, &mc_base)?;
+            overrides_copied = true;
+        }
+
+        let mut msg = format!(
+            "Модпак установлен: {} файлов{}",
+            index.files.len(),
+            if overrides_copied { ", overrides перенесены" } else { "" }
+        );
+        let mut notes: Vec<String> = Vec::new();
+        if let Some(mc) = index.dependencies.get("minecraft") {
+            let installed = crate::version::list_installed(root);
+            let has_mc = installed.iter().any(|i| i.id == *mc || i.id.ends_with(mc));
+            if !has_mc {
+                notes.push(format!("для работы нужна версия игры {}", mc));
+            }
+        }
+        if let Some(fl) = index.dependencies.get("fabric-loader") {
+            let installed = crate::version::list_installed(root);
+            if !installed.iter().any(|i| i.id.contains("fabric-loader") && i.id.contains(fl.as_str())) {
+                notes.push(format!("Fabric loader {} не найден — установите его во вкладке Игра", fl));
+            }
+        }
+        if let Some(fo) = index.dependencies.get("forge") {
+            notes.push(format!("модпак рассчитан на Forge {}", fo));
+        }
+        if !notes.is_empty() {
+            msg = format!("{}. Примечание: {}", msg, notes.join("; "));
+        }
+        crate::logger::emit_console(app, "info", "modrinth", &msg);
+        Ok(msg)
+    }
+    .await;
+    let _ = std::fs::remove_dir_all(&tmp);
+    result
 }

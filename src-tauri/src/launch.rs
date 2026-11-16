@@ -219,7 +219,7 @@ pub async fn launch(
     let mut map: BTreeMap<String, String> = BTreeMap::new();
     map.insert("natives_directory".into(), natives_dir.to_string_lossy().to_string());
     map.insert("launcher_name".into(), "AstralLauncher".into());
-    map.insert("launcher_version".into(), "1.0.0".into());
+    map.insert("launcher_version".into(), env!("CARGO_PKG_VERSION").into());
     map.insert("classpath".into(), classpath.clone());
     map.insert("classpath_separator".into(), classpath_separator.into());
     map.insert("library_directory".into(), root.join("libraries").to_string_lossy().to_string());
@@ -351,6 +351,13 @@ pub async fn launch(
         .spawn()
         .map_err(|e| format!("не удалось запустить java: {}", e))?;
     let pid = child.id().unwrap_or(0);
+    let started_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    // история запусков + наигранное время (обновляется при завершении)
+    crate::stats::record_start(&root, &model.id(), &account.username, started_at_ms);
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -376,20 +383,47 @@ pub async fn launch(
     }
 
     let app_wait = app.clone();
+    let root_wait = root.clone();
+    let game_dir_wait = game_dir.clone();
     tokio::spawn(async move {
         let status = child.wait().await;
         let code = status
             .map(|s| s.code().unwrap_or(-1))
             .unwrap_or(-1);
+        let ended_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        crate::stats::record_finish(&root_wait, started_at_ms, ended_at_ms);
+        let crash = if code != 0 {
+            crate::stats::find_crash_info(&game_dir_wait, started_at_ms)
+        } else {
+            None
+        };
+        if let Some(c) = &crash {
+            crate::logger::emit_console(
+                &app_wait,
+                "error",
+                "crash",
+                &format!(
+                    "Игра завершилась с ошибкой: {}. {}",
+                    c.description, c.hint
+                ),
+            );
+        }
         crate::logger::emit_console(
             &app_wait,
             if code == 0 { "info" } else { "warn" },
             "launch",
-            &format!("Процесс игры завершён с кодом {}", code),
+            &format!(
+                "Процесс игры завершён с кодом {} (сеанс {} мин)",
+                code,
+                ended_at_ms.saturating_sub(started_at_ms) / 60000
+            ),
         );
         let _ = app_wait.emit(
             "game-exit",
-            serde_json::json!({ "pid": pid, "code": code }),
+            serde_json::json!({ "pid": pid, "code": code, "crash": crash }),
         );
     });
 

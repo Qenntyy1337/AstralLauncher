@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, formatDate, formatBytes } from "../api";
-import type { Config, ManifestVersion, InstalledVersion, SizeBreakdown, LaunchInfo } from "../types";
+import { t } from "../i18n";
+import type { Config, ManifestVersion, InstalledVersion, SizeBreakdown, LaunchInfo, PlayStats } from "../types";
 import {
   IconClock,
   IconDownload,
@@ -10,6 +11,7 @@ import {
   IconUser,
   IconCPU,
   IconRefresh,
+  IconStats,
 } from "../icons";
 import { EmptyState, Spinner } from "./common";
 
@@ -19,6 +21,8 @@ interface PlayTabProps {
   startJob: (jobId: string, label: string) => void;
   showToast: (msg: string, ok?: boolean) => void;
   refreshSignal: number;
+  running: LaunchInfo | null;
+  onLaunched: (info: LaunchInfo) => void;
 }
 
 const LOADERS: { id: string; label: string }[] = [
@@ -33,7 +37,25 @@ function versionGroup(kind: string): string {
   return "old";
 }
 
-export default function PlayTab({ config, patchConfig, startJob, showToast, refreshSignal }: PlayTabProps) {
+export function formatDuration(sec: number): string {
+  if (sec >= 3600) {
+    return `${Math.floor(sec / 3600)} ${t("play.hours")} ${Math.floor((sec % 3600) / 60)} ${t("play.minutes")}`;
+  }
+  if (sec >= 60) {
+    return `${Math.floor(sec / 60)} ${t("play.minutes")}`;
+  }
+  return `${sec} ${t("play.minutes")}`;
+}
+
+export default function PlayTab({
+  config,
+  patchConfig,
+  startJob,
+  showToast,
+  refreshSignal,
+  running,
+  onLaunched,
+}: PlayTabProps) {
   const [versions, setVersions] = useState<ManifestVersion[] | null>(null);
   const [installed, setInstalled] = useState<InstalledVersion[]>([]);
   const [sizes, setSizes] = useState<Record<string, number>>({});
@@ -44,38 +66,35 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
   const setLoader = (v: string) => patchConfig({ play_loader: v });
   const [selected, setSelected] = useState<string>(config.active_version ?? "");
   const [launching, setLaunching] = useState(false);
-  const [running, setRunning] = useState<LaunchInfo | null>(null);
   const [javaPrompt, setJavaPrompt] = useState<number | null>(null);
+  const [stats, setStats] = useState<PlayStats | null>(null);
   const fetchGen = useRef(0);
 
   const reloadInstalled = () => {
     api.listInstalled().then(setInstalled).catch(() => {});
   };
 
+  const reloadStats = () => {
+    api.getPlayStats().then(setStats).catch(() => {});
+  };
+
   useEffect(() => {
     api.listVersions().then((v) => setVersions(v)).catch((e) => showToast(String(e), false));
     reloadInstalled();
+    reloadStats();
   }, []);
 
   useEffect(() => {
     reloadInstalled();
+    reloadStats();
   }, [refreshSignal]);
 
+  // статистика обновляется после завершения сессии
   useEffect(() => {
-    let cancelled = false;
-    const handler = (payload: { pid: number; code: number }) => {
-      setRunning(null);
-      showToast(`Игра завершена (код ${payload.code})`, payload.code === 0);
-    };
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<{ pid: number; code: number }>("game-exit", (e) => handler(e.payload)).then((un) => {
-        if (cancelled) un();
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [showToast]);
+    if (!running) {
+      reloadStats();
+    }
+  }, [running]);
 
   const filtered = useMemo(() => {
     if (!versions) return [];
@@ -88,9 +107,9 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
   }, [versions, filter, query]);
 
   useEffect(() => {
+    let cancelled = false;
     const gen = ++fetchGen.current;
     const targets = filtered.slice(0, 60).map((v) => v.id).filter((id) => !(id in sizes));
-    let cancelled = false;
     // Небольшие параллельные партии, чтобы размеры появлялись быстро,
     // но без очереди из 60 запросов к Mojang
     const BATCH = 8;
@@ -134,7 +153,7 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
   const launch = () => {
     const versionId = selected || config.active_version || "";
     if (!versionId) {
-      showToast("Выберите установленную версию", false);
+      showToast(t("play.selectVersion"), false);
       return;
     }
     setLaunching(true);
@@ -142,16 +161,16 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
     api
       .launchGame(versionId)
       .then((info) => {
-        setRunning(info);
+        onLaunched(info);
         patchConfig({ active_version: versionId });
-        showToast(`Игра запущена: ${info.version}`, true);
+        showToast(`${t("play.gameStarted")}: ${info.version}`, true);
       })
       .catch((e) => {
         const msg = String(e);
         if (msg.startsWith("JAVA_MISSING:")) {
           const major = parseInt(msg.split(":")[1], 10) || 17;
           setJavaPrompt(major);
-          showToast(`Не найдена Java ${major}. Установите её одним кликом ниже.`, false);
+          showToast(`${t("play.javaMissing")} ${major}${t("play.javaMissingHint")}`, false);
         } else {
           showToast(msg, false);
         }
@@ -176,23 +195,32 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
   const account = config.accounts.find((a) => a.id === config.active_account_id) ?? config.accounts[0];
   const selectedInstalled = installed.find((i) => i.id === (selected || config.active_version));
 
+  const topVersions = useMemo(() => {
+    if (!stats) return [];
+    return Object.entries(stats.per_version_sec)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+  }, [stats]);
+
+  const history = useMemo(() => (stats ? stats.history.slice(0, 8) : []), [stats]);
+
   return (
     <div>
-      <div className="page-title">Игра</div>
-      <div className="page-subtitle">Версии Minecraft, мод-лоадеры и запуск</div>
+      <div className="page-title">{t("play.title")}</div>
+      <div className="page-subtitle">{t("play.subtitle")}</div>
       <div className="play-layout">
         <div className="card">
           <div className="card-title">
             <IconDownload size={16} />
-            Каталог версий
+            {t("play.catalog")}
           </div>
           <div className="filter-bar">
             <div className="row" style={{ gap: 6 }}>
               {[
-                { id: "release", label: "Релизы" },
-                { id: "snapshot", label: "Снапшоты" },
-                { id: "old", label: "Старые" },
-                { id: "all", label: "Все" },
+                { id: "release", label: t("play.release") },
+                { id: "snapshot", label: t("play.snapshot") },
+                { id: "old", label: t("play.old") },
+                { id: "all", label: t("play.all") },
               ].map((f) => (
                 <button
                   key={f.id}
@@ -206,7 +234,7 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
             <input
               className="input"
               style={{ flex: 1, minWidth: 140 }}
-              placeholder="Поиск версии, например 1.20.1"
+              placeholder={t("play.searchVersion")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -228,7 +256,7 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
               <Spinner />
             </div>
           ) : filtered.length === 0 ? (
-            <EmptyState icon={<IconDownload size={28} />} title="Версии не найдены" />
+            <EmptyState icon={<IconDownload size={28} />} title={t("play.nothingInstalled")} />
           ) : (
             <div className="list">
               {filtered.slice(0, 60).map((v) => {
@@ -249,13 +277,13 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
                         <span>{size !== undefined ? formatBytes(size) : "…"}</span>
                       </div>
                     </div>
-                    {isSnapshot ? <span className="badge snapshot">снапшот</span> : null}
-                    {isOld ? <span className="badge old">старая</span> : null}
-                    {!isSnapshot && !isOld ? <span className="badge release">релиз</span> : null}
+                    {isSnapshot ? <span className="badge snapshot">{t("play.snapshotBadge")}</span> : null}
+                    {isOld ? <span className="badge old">{t("play.oldBadge")}</span> : null}
+                    {!isSnapshot && !isOld ? <span className="badge release">{t("play.releaseBadge")}</span> : null}
                     {isInstalled ? (
                       <span className="badge installed">
                         <IconCheck size={11} />
-                        есть
+                        {t("play.installed")}
                       </span>
                     ) : null}
                     <button
@@ -271,24 +299,20 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
                       }
                     >
                       <IconDownload size={14} />
-                      Установить
+                      {t("play.install")}
                     </button>
                   </div>
                 );
               })}
             </div>
           )}
-          <div className="hint">
-            Размер — клиентский JAR, библиотеки и ассеты, считается до установки. Дата — релиз
-            версии. Загрузчик можно сменить перед установкой: Fabric или Forge ставятся поверх
-            выбранной версии. Forge доступен только для релизов, снапшоты — Vanilla и Fabric.
-          </div>
+          <div className="hint">{t("play.catalogHint")}</div>
         </div>
         <div className="col">
           <div className="card">
             <div className="card-title">
               <IconUser size={16} />
-              Аккаунт
+              {t("play.account")}
             </div>
             {account ? (
               <div className="row" style={{ justifyContent: "space-between" }}>
@@ -297,20 +321,20 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
                   <div>
                     <div style={{ fontWeight: 600 }}>{account.username}</div>
                     <div className="meta" style={{ color: "var(--text-faint)", fontSize: 12 }}>
-                      {account.kind === "microsoft" ? "Microsoft" : "Офлайн"}
+                      {account.kind === "microsoft" ? "Microsoft" : t("play.offline")}
                     </div>
                   </div>
                 </div>
-                <span className="badge">сменить в настройках</span>
+                <span className="badge">{t("play.changeInSettings")}</span>
               </div>
             ) : (
-              <div className="hint">Аккаунт не выбран. Добавьте его во вкладке Настройки.</div>
+              <div className="hint">{t("play.noAccount")}</div>
             )}
           </div>
           <div className="card">
             <div className="card-title">
               <IconCPU size={16} />
-              Установленные версии
+              {t("play.installedVersions")}
               <span style={{ marginLeft: "auto" }}>
                 <a
                   className="link"
@@ -325,7 +349,7 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
               </span>
             </div>
             {installed.length === 0 ? (
-              <div className="hint">Пока ничего не установлено. Выберите версию в каталоге слева.</div>
+              <div className="hint">{t("play.nothingInstalled")}</div>
             ) : (
               <div className="installed-col">
                 {installed.map((iv) => (
@@ -352,7 +376,7 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
                         {iv.id}
                       </div>
                       <div className="meta" style={{ color: "var(--text-faint)", fontSize: 11.5 }}>
-                        {iv.has_jar ? "готова к запуску" : "нет jar"}
+                        {iv.has_jar ? t("play.readyToLaunch") : t("play.noJar")}
                       </div>
                     </div>
                     {iv.loader !== "vanilla" ? <span className="badge loader">{iv.loader}</span> : null}
@@ -368,10 +392,10 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
                 style={{ flex: 1 }}
               >
                 {launching ? <Spinner /> : <IconPlay size={18} />}
-                {launching ? "Запуск..." : running ? "Игра запущена" : "Играть"}
+                {launching ? t("play.launching") : running ? t("play.running") : t("play.launch")}
               </button>
               {running ? (
-                <button className="btn danger" onClick={stopGame} title="Завершить процесс игры">
+                <button className="btn danger" onClick={stopGame} title={t("play.stop")}>
                   <IconStop size={16} />
                 </button>
               ) : null}
@@ -384,9 +408,70 @@ export default function PlayTab({ config, patchConfig, startJob, showToast, refr
             {javaPrompt !== null ? (
               <button className="btn primary" style={{ marginTop: 10, width: "100%" }} onClick={() => installJava(javaPrompt)}>
                 <IconDownload size={16} />
-                Установить Java {javaPrompt}
+                {t("play.javaPrompt")} {javaPrompt}
               </button>
             ) : null}
+          </div>
+
+          <div className="card">
+            <div className="card-title">
+              <IconStats size={16} />
+              {t("play.stats")}
+            </div>
+            {stats && stats.total_sec > 0 ? (
+              <>
+                <div className="stat-row">
+                  <span className="stat-value">{formatDuration(stats.total_sec)}</span>
+                  <span className="stat-label">{t("play.total")}</span>
+                </div>
+                {topVersions.length > 0 ? (
+                  <div className="installed-col" style={{ marginTop: 10 }}>
+                    {topVersions.map(([v, sec]) => (
+                      <div key={v} className="installed-row" style={{ cursor: "default" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 500 }}>{v}</div>
+                        </div>
+                        <span className="badge">{formatDuration(sec)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="hint">{t("play.noStats")}</div>
+            )}
+          </div>
+
+          <div className="card">
+            <div className="card-title">
+              <IconClock size={16} />
+              {t("play.history")}
+            </div>
+            {history.length === 0 ? (
+              <div className="hint">{t("play.noHistory")}</div>
+            ) : (
+              <div className="installed-col">
+                {history.map((h, i) => (
+                  <div key={i} className="installed-row" style={{ cursor: "default" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {h.version}
+                      </div>
+                      <div className="meta" style={{ color: "var(--text-faint)", fontSize: 11.5 }}>
+                        {new Date(h.ts_ms).toLocaleString("ru-RU", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                        {h.account ? ` · ${h.account}` : ""}
+                      </div>
+                    </div>
+                    <span className="badge">{h.duration_sec > 0 ? formatDuration(h.duration_sec) : "—"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

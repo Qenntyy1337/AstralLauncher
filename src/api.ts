@@ -12,6 +12,8 @@ import type {
   DeviceCode,
   RootInfo,
   LaunchInfo,
+  PlayStats,
+  UpdateCheck,
 } from "./types";
 
 /**
@@ -94,6 +96,14 @@ export const api = {
   cancelJob: (jobId: string) => call<boolean>("cancel_job", { jobId }),
   setCustomWallpaper: (path: string) => call<Config>("set_custom_wallpaper", { path }),
   getCustomWallpaper: () => call<string | null>("get_custom_wallpaper"),
+  getPlayStats: () => call<PlayStats>("get_play_stats"),
+  getLauncherVersion: () => call<string>("get_launcher_version"),
+  checkUpdate: () => call<UpdateCheck>("check_launcher_update"),
+  getSystemRamMb: () => call<number>("get_system_ram_mb"),
+  revealPath: (path: string) => call<void>("reveal_path", { path }),
+  openLogsDir: () => call<void>("open_logs_dir"),
+  installLocalMod: (path: string) => call<string>("install_local_mod_cmd", { path }),
+  installMrpack: (path: string) => call<string>("install_mrpack_cmd", { path }),
 };
 
 export function formatBytes(n: number): string {
@@ -112,6 +122,17 @@ export function formatBytes(n: number): string {
 export function formatSpeed(bps: number): string {
   if (bps <= 0) return "";
   return `${formatBytes(bps)}/с`;
+}
+
+export function formatEta(sec: number): string {
+  if (sec <= 0 || !isFinite(sec)) return "";
+  if (sec >= 3600) {
+    return `${Math.floor(sec / 3600)} ч ${Math.floor((sec % 3600) / 60)} мин`;
+  }
+  if (sec >= 60) {
+    return `${Math.floor(sec / 60)} мин ${sec % 60} с`;
+  }
+  return `${sec} с`;
 }
 
 export function formatDate(iso: string): string {
