@@ -11,7 +11,6 @@ pub async fn fabric_loader_versions() -> Result<Vec<String>, String> {
     let arr = value.as_array().ok_or("fabric meta: не массив")?;
     let mut out = Vec::new();
     for item in arr {
-        // Формат meta v2: {"version": "0.20.1", ...}; старый формат: {"loader": {"version": ...}}
         let v = item
             .get("version")
             .and_then(|v| v.as_str())
@@ -168,7 +167,6 @@ fn newest_version_dir(root: &PathBuf, mc: &str) -> Option<String> {
     best.map(|(_, n)| n)
 }
 
-/// Требуемая Java для установщика Forge: из javaVersion в JSON самой версии Mojang.
 async fn required_java_for(app: &tauri::AppHandle, mc: &str) -> Result<u32, String> {
     let manifest = crate::version::fetch_manifest_cached(app).await?;
     let entry = crate::version::manifest_entry(&manifest, mc)

@@ -120,8 +120,7 @@ export default function ConsoleTab({ logs, onClear }: ConsoleTabProps) {
       <div className="console-list" ref={listRef}>
         {filtered.length === 0 ? (
           <div style={{ padding: 24, color: "var(--text-faint)", textAlign: "center", fontFamily: "var(--font)" }}>
-            Логов нет. Установите версию или запустите игру.
-          </div>
+            {t("console.empty")}</div>
         ) : (
           filtered.map((l, i) => (
             <div className={`console-line ${l.level}`} key={i}>

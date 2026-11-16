@@ -70,7 +70,6 @@ pub struct Project {
     pub license: Option<serde_json::Value>,
     #[serde(default)]
     pub date_created: String,
-    // В /project/{slug} Modrinth кладёт идентификатор в "id", а не "project_id"
     #[serde(default, alias = "id")]
     pub project_id: String,
 }
@@ -244,7 +243,6 @@ fn primary_file(version: &ModVersion) -> Option<&ModFile> {
         .or_else(|| version.files.first())
 }
 
-/// Из списка совместимых версий игры берём первый релиз (без снапшотов).
 fn derive_mc_version(version: &ModVersion) -> String {
     for gv in &version.game_versions {
         if !gv.contains("snapshot")
@@ -373,7 +371,6 @@ pub async fn install_content(
         Some(vid) if !vid.is_empty() => version_by_id(vid).await?,
         _ => resolve_version_for_project(project_id, mc_opt, ld).await?,
     };
-    // Если версия игры не выбрана — выводим её из самой сборки мода.
     let mc: Option<String> = match mc_opt {
         Some(m) => Some(m.to_string()),
         None => {
@@ -385,6 +382,34 @@ pub async fn install_content(
             }
         }
     };
+    if project_type == "modpack" {
+        let file = version
+            .files
+            .iter()
+            .find(|f| f.primary)
+            .or_else(|| version.files.first())
+            .ok_or("у сборки модпака нет файлов")?;
+        let cache_dir = root.join("cache").join("modpacks");
+        ensure_dir(&cache_dir)?;
+        let mrpack_path = cache_dir.join(&file.filename);
+        let label = format!("Модпак: {} {}", project_title, version.version_number);
+        download_all(
+            app,
+            job,
+            job_id,
+            &label,
+            vec![DownloadItem {
+                url: file.url.clone(),
+                dest: mrpack_path.clone(),
+                sha1: file_sha1(file),
+                size: Some(file.size),
+            }],
+        )
+        .await?;
+        let msg = install_mrpack(app, root, job, job_id, &mrpack_path).await?;
+        let _ = std::fs::remove_file(&mrpack_path);
+        return Ok(msg);
+    }
     let dest_dir = content_dir(root, project_type)?;
     ensure_dir(&dest_dir)?;
     let files = collect_files(&version, mc.as_deref(), ld, 0).await?;
@@ -496,8 +521,6 @@ pub fn delete_content_file(root: &PathBuf, project_type: &str, name: &str) -> Re
     }
 }
 
-// ===== Модпаки Modrinth (.mrpack) =====
-
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct MrPackIndex {
@@ -539,8 +562,6 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Установка модпака .mrpack: распаковываем архив, качаем моды из index.json
-/// (с проверкой sha1), переносим overrides в minecraft/, сообщаем о зависимостях
 pub async fn install_mrpack(
     app: &tauri::AppHandle,
     root: &PathBuf,
@@ -581,7 +602,6 @@ pub async fn install_mrpack(
             if f.path.contains("..") || f.path.starts_with('/') || f.path.contains('\\') {
                 return Err(format!("небезопасный путь в модпаке: {}", f.path));
             }
-            // env.client == "unsupported" — файл только для сервера
             if f.env
                 .as_ref()
                 .and_then(|e| e.get("client"))
@@ -619,7 +639,6 @@ pub async fn install_mrpack(
         );
         download_all(app, job, job_id, "Файлы модпака", items).await?;
 
-        // overrides копируем в minecraft/
         let overrides = tmp.join("overrides");
         let mut overrides_copied = false;
         if overrides.is_dir() {

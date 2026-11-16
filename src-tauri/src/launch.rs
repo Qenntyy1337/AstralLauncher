@@ -34,9 +34,6 @@ fn expand_placeholders(
     result
 }
 
-/// Экранирование одного аргумента для @argfile java-лаунчера:
-/// аргументы с пробелами/кавычками берём в кавычки, внутри — экранируем
-/// обратные слэши и кавычки
 fn quote_argfile(s: &str) -> String {
     if s.contains(' ') || s.contains('"') {
         format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
@@ -87,7 +84,6 @@ pub async fn launch(
     let model = match version::read_effective(&root, version_id).await {
         Ok(m) => m,
         Err(e) => {
-            // самовосстановление: докачиваем недостающие json версии/родителя
             let healed = version::heal_version_chain(app, &root, version_id)
                 .await
                 .unwrap_or(false);
@@ -116,10 +112,6 @@ pub async fn launch(
         return Err(format!("файл версии {} не найден, установите её заново", version_id));
     }
 
-    // Самовосстановление библиотек: если какие-то jar отсутствуют (например,
-    // профиль был установлен старой сборкой лаунчера, которая молча пропускала
-    // библиотеки без downloads.artifact), докачиваем их перед запуском — иначе
-    // они тихо выпадут из classpath и main-класс не найдётся
     let (lib_items, _) = version::collect_library_items(&model, &root);
     let missing: Vec<crate::download::DownloadItem> =
         lib_items.into_iter().filter(|it| !it.dest.is_file()).collect();
@@ -160,9 +152,6 @@ pub async fn launch(
         if !eval_rules(&lib.rules, &features) {
             continue;
         }
-        // путь библиотеки: downloads.artifact.path, иначе maven-путь по имени —
-        // библиотеки загрузчиков (fabric/forge) не имеют downloads и обязаны
-        // попадать в classpath через maven-путь
         let path = match &lib.downloads {
             Some(dl) => match &dl.artifact {
                 Some(a) => a
@@ -310,9 +299,6 @@ pub async fn launch(
     );
 
     let mut cmd = tokio::process::Command::new(&java_exe);
-    // Длинные командные строки (сотни библиотек в -classpath) упираются в
-    // лимит Windows ~32К символов (os error 206) — упаковываем аргументы в
-    // @argfile, который поддерживается java-лаунчером начиная с Java 9
     let cmdline_len: usize = args.iter().map(|a| a.len() + 1).sum();
     if cmdline_len > 30000 && major >= 9 {
         let argfile = natives_dir
@@ -356,7 +342,6 @@ pub async fn launch(
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
 
-    // история запусков + наигранное время (обновляется при завершении)
     crate::stats::record_start(&root, &model.id(), &account.username, started_at_ms);
 
     let stdout = child.stdout.take();

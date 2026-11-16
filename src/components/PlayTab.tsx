@@ -13,7 +13,7 @@ import {
   IconRefresh,
   IconStats,
 } from "../icons";
-import { EmptyState, Spinner } from "./common";
+import { EmptyState, Spinner, AccountHead } from "./common";
 
 interface PlayTabProps {
   config: Config;
@@ -61,7 +61,6 @@ export default function PlayTab({
   const [sizes, setSizes] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<string>("release");
   const [query, setQuery] = useState("");
-  // выбранный загрузчик хранится в конфиге и не сбрасывается при смене вкладки
   const loader = config.play_loader || "vanilla";
   const setLoader = (v: string) => patchConfig({ play_loader: v });
   const [selected, setSelected] = useState<string>(config.active_version ?? "");
@@ -89,7 +88,6 @@ export default function PlayTab({
     reloadStats();
   }, [refreshSignal]);
 
-  // статистика обновляется после завершения сессии
   useEffect(() => {
     if (!running) {
       reloadStats();
@@ -110,8 +108,6 @@ export default function PlayTab({
     let cancelled = false;
     const gen = ++fetchGen.current;
     const targets = filtered.slice(0, 60).map((v) => v.id).filter((id) => !(id in sizes));
-    // Небольшие параллельные партии, чтобы размеры появлялись быстро,
-    // но без очереди из 60 запросов к Mojang
     const BATCH = 8;
     const runBatch = (start: number) => {
       if (cancelled || gen !== fetchGen.current) return;
@@ -144,7 +140,6 @@ export default function PlayTab({
   };
 
   useEffect(() => {
-    // бэкенд делает только что установленную версию активной — подхватываем
     if (config.active_version) {
       setSelected(config.active_version);
     }
@@ -242,7 +237,7 @@ export default function PlayTab({
               className="select"
               value={loader}
               onChange={(e) => setLoader(e.target.value)}
-              title="Мод-лоадер для установки"
+              title={t("play.loaderTitle")}
             >
               {LOADERS.map((l) => (
                 <option key={l.id} value={l.id}>
@@ -292,10 +287,10 @@ export default function PlayTab({
                       disabled={forgeBlocked}
                       title={
                         forgeBlocked
-                          ? "Forge доступен только для релизов — выберите Vanilla или Fabric"
+                          ? t("play.forgeBlocked")
                           : loader === "vanilla"
-                            ? "Установить версию"
-                            : `Установить ${loader}`
+                            ? t("play.installVersion")
+                            : `${t("play.install")} ${loader}`
                       }
                     >
                       <IconDownload size={14} />
@@ -317,7 +312,7 @@ export default function PlayTab({
             {account ? (
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <div className="row" style={{ gap: 10 }}>
-                  <div className="sidebar-account">{account.username.slice(0, 1).toUpperCase()}</div>
+                  <AccountHead name={account.username} size={36} />
                   <div>
                     <div style={{ fontWeight: 600 }}>{account.username}</div>
                     <div className="meta" style={{ color: "var(--text-faint)", fontSize: 12 }}>
@@ -402,7 +397,7 @@ export default function PlayTab({
             </div>
             {running ? (
               <div className="hint">
-                PID {running.pid} | Java {running.java.split("\\").pop()} | {running.memory_mb} МБ
+                PID {running.pid} | Java {running.java.split("\\").pop()} | {running.memory_mb} {t("unit.mb")}
               </div>
             ) : null}
             {javaPrompt !== null ? (

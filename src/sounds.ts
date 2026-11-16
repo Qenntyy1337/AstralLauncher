@@ -1,4 +1,3 @@
-// Звуковые подсказки на WebAudio — без файлов-ассетов
 let ctx: AudioContext | null = null;
 
 function beep(
@@ -22,11 +21,11 @@ function beep(
     osc.start(t0);
     osc.stop(t0 + dur);
   } catch {
-    // звук не критичен — молча пропускаем
   }
 }
 
 export const sounds = {
+  click: () => beep(340, 0.05, 0, "sine", 0.05),
   success: () => {
     beep(660, 0.12, 0);
     beep(880, 0.16, 0.12);

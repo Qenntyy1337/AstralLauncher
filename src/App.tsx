@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, formatBytes, formatSpeed, formatEta } from "./api";
-import { setLang, t } from "./i18n";
+import { setLang, t, tMsg } from "./i18n";
 import { sounds } from "./sounds";
 import type { Config, ConsoleEntry, ProgressPayload, TaskFinished, LaunchInfo, GameExitEvent } from "./types";import {
   IconPlay,
@@ -19,7 +19,7 @@ import PlayTab from "./components/PlayTab";
 import ModsTab from "./components/ModsTab";
 import SettingsTab from "./components/SettingsTab";
 import ConsoleTab from "./components/ConsoleTab";
-import { ProgressBar } from "./components/common";
+import { ProgressBar, AccountHead } from "./components/common";
 
 type TabId = "play" | "mods" | "settings" | "console";
 
@@ -66,7 +66,8 @@ export default function App() {
     cfgRef.current = config;
   }, [config]);
 
-  const showToast = useCallback((msg: string, ok = true) => {
+  const showToast = useCallback((rawMsg: string, ok = true) => {
+    const msg = tMsg(rawMsg);
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev.slice(-4), { id, msg, ok }]);
     window.setTimeout(() => {
@@ -127,7 +128,7 @@ export default function App() {
           ts: new Date().toLocaleTimeString("ru-RU", { hour12: false }),
           level: "info",
           source: "launcher",
-          message: `AstralLauncher запущен. Каталог: ${cfg.root_dir}`,
+          message: `${t("app.started")}${cfg.root_dir}`,
         });
       })
       .catch((e) => showToast(String(e), false));
@@ -156,7 +157,6 @@ export default function App() {
         });
         if (t.ok && (t.kind === "install-version" || t.kind === "install-content" || t.kind === "install-java" || t.kind === "install-mrpack")) {
           setRefreshSignal((n) => n + 1);
-          // после установки бэкенд делает версию активной — подтягиваем конфиг
           if (t.kind === "install-version") {
             api.getConfig().then(setConfig).catch(() => {});
           }
@@ -178,14 +178,12 @@ export default function App() {
     };
   }, [logConsole, showToast]);
 
-  // таймер сессии в шапке
   useEffect(() => {
     if (!running) return;
     const iv = window.setInterval(() => setSessionNow(Date.now()), 1000);
     return () => window.clearInterval(iv);
   }, [running]);
 
-  // Drag&drop .jar модов и .mrpack модпаков (Tauri перехватывает dnd сам)
   useEffect(() => {
     const un = getCurrentWebview().onDragDropEvent((e) => {
       const p = e.payload;
@@ -221,7 +219,17 @@ export default function App() {
     };
   }, [showToast, startJob]);
 
-  // закрытие меню аккаунтов по клику вне
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest("button, .chip, .nav-btn") && cfgRef.current?.ui_sounds_enabled) {
+        sounds.click();
+      }
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, []);
+
   useEffect(() => {
     if (!accountMenu) return;
     const close = (e: MouseEvent) => {
@@ -242,7 +250,6 @@ export default function App() {
     [config],
   );
 
-  // свои обои: подтягиваем base64 при выборе "custom"
   useEffect(() => {
     if (config?.wallpaper === "custom") {
       api
@@ -263,7 +270,6 @@ export default function App() {
     );
   }
 
-  // язык применяется до рендера детей — подписи t() всегда актуальны
   setLang(config.language);
   const accent = ACCENTS[config.accent] ?? ACCENTS.violet;
   const accentStyle = {
@@ -294,7 +300,6 @@ export default function App() {
   }
   const showBg = bgImage !== null;
 
-  // затемнение поверх обоев, регулируется настройкой (10–80%)
   const d1 = (dim * 0.55) / 100;
   const d2 = dim / 100;
 
@@ -344,8 +349,8 @@ export default function App() {
         ))}
         <div className="sidebar-spacer" />
         {activeAccount ? (
-          <div className="sidebar-account" title={activeAccount.username}>
-            {activeAccount.username.slice(0, 1).toUpperCase()}
+          <div title={activeAccount.username}>
+            <AccountHead name={activeAccount.username} size={32} />
           </div>
         ) : null}
       </div>
@@ -368,9 +373,7 @@ export default function App() {
                 onClick={() => setAccountMenu((v) => !v)}
                 title={t("play.account")}
               >
-                <div className="sidebar-account" style={{ width: 28, height: 28, fontSize: 12 }}>
-                  {activeAccount ? activeAccount.username.slice(0, 1).toUpperCase() : "?"}
-                </div>
+                <AccountHead name={activeAccount ? activeAccount.username : ""} size={28} />
                 <span className="account-switch-name">
                   {activeAccount ? activeAccount.username : "—"}
                 </span>
@@ -389,9 +392,7 @@ export default function App() {
                           .catch((e) => showToast(String(e), false));
                       }}
                     >
-                      <div className="sidebar-account" style={{ width: 24, height: 24, fontSize: 11 }}>
-                        {a.username.slice(0, 1).toUpperCase()}
-                      </div>
+                      <AccountHead name={a.username} size={24} />
                       <span style={{ flex: 1, textAlign: "left" }}>{a.username}</span>
                       {a.kind === "microsoft" ? <span className="badge loader">MS</span> : null}
                       {a.id === config.active_account_id ? <IconCheck size={14} /> : null}
@@ -433,6 +434,7 @@ export default function App() {
           {tab === "mods" ? (
             <ModsTab
               config={config}
+              patchConfig={(p) => patchConfig(p)}
               startJob={startJob}
               showToast={showToast}
               refreshSignal={refreshSignal}
@@ -460,7 +462,7 @@ export default function App() {
             return (
               <div className="download-job" key={j.job_id}>
                 <div style={{ width: 210, flexShrink: 0 }}>
-                  <div className="label">{j.label}</div>
+                  <div className="label">{tMsg(j.label)}</div>
                   <ProgressBar value={pct} className="progress-in-job" />
                 </div>
                 <div className="stats">

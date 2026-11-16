@@ -36,11 +36,11 @@ pub struct Config {
     pub wallpaper_blur: u32,
     pub wallpaper_dim: u32,
     pub play_loader: String,
-    // 1.0.1: интенсивность/оттенок авроры, акцентный цвет, звуки, язык
     pub aurora_intensity: u32,
     pub aurora_hue: i32,
     pub accent: String,
     pub sounds_enabled: bool,
+    pub ui_sounds_enabled: bool,
     pub language: String,
 }
 
@@ -67,6 +67,7 @@ impl Default for Config {
             aurora_hue: 0,
             accent: "violet".to_string(),
             sounds_enabled: true,
+            ui_sounds_enabled: true,
             language: "ru".to_string(),
         }
     }

@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Запись об одном запуске игры: когда, во что, кем и сколько играли
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaunchRecord {
     pub ts_ms: u64,
@@ -40,7 +39,6 @@ pub fn save(root: &Path, stats: &PlayStats) {
     }
 }
 
-/// Запуск игры: добавляем запись в историю (длительность уточнится при выходе)
 pub fn record_start(root: &Path, version: &str, account: &str, ts_ms: u64) {
     let mut stats = load(root);
     stats.history.insert(
@@ -58,11 +56,9 @@ pub fn record_start(root: &Path, version: &str, account: &str, ts_ms: u64) {
     save(root, &stats);
 }
 
-/// Завершение игры: обновляем длительность самой свежей незавершённой записи
 pub fn record_finish(root: &Path, started_at_ms: u64, ended_at_ms: u64) {
     let duration = ended_at_ms.saturating_sub(started_at_ms) / 1000;
     let mut stats = load(root);
-    // самая свежая запись с нулевой длительностью — это текущая сессия
     let version = stats
         .history
         .iter_mut()
@@ -79,7 +75,6 @@ pub fn record_finish(root: &Path, started_at_ms: u64, ended_at_ms: u64) {
     save(root, &stats);
 }
 
-/// Человекочитаемая расшифровка краша по тексту crash-report
 fn crash_hint(description: &str, head: &str) -> String {
     let text = format!("{}\n{}", description, head);
     let lower = text.to_lowercase();
@@ -117,7 +112,6 @@ pub struct CrashInfo {
     pub hint: String,
 }
 
-/// Ищем самый свежий crash-report в minecraft/crash-reports и достаём краткую причину
 pub fn find_crash_info(game_dir: &Path, after_ms: u64) -> Option<CrashInfo> {
     let dir = game_dir.join("crash-reports");
     let entries = std::fs::read_dir(&dir).ok()?;
@@ -130,7 +124,6 @@ pub fn find_crash_info(game_dir: &Path, after_ms: u64) -> Option<CrashInfo> {
         }
         let md = e.metadata().ok()?;
         let modified = md.modified().ok()?;
-        // берём отчёты, появившиеся после запуска сессии (или последний в любом случае)
         let eligible = modified
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64 >= after_ms.saturating_sub(1000))

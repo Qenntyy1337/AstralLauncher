@@ -46,11 +46,10 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
     api
       .getSystemRamMb()
       .then((totalMb) => {
-        // четверть объёма ОЗУ, округлённая к 512 МБ, в пределах слайдера
         const raw = Math.round(totalMb / 4 / 512) * 512;
         const rec = Math.max(1024, Math.min(32768, raw));
         patchConfig({ ram_mb: rec });
-        showToast(`${t("settings.ramRecommended")}: ${rec} МБ (ПК: ${formatBytes(totalMb * 1024 * 1024)})`, true);
+        showToast(`${t("settings.ramRecommended")}: ${rec} ${t("unit.mb")} (${formatBytes(totalMb * 1024 * 1024)})`, true);
       })
       .catch(() => showToast(t("settings.ramUnknown"), false));
   };
@@ -111,7 +110,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
         directory: false,
         multiple: false,
         filters: [
-          { name: "Изображения", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] },
+          { name: t("settings.imagesFilter"), extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] },
         ],
       });
       if (typeof picked === "string") {
@@ -222,7 +221,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
           {t("settings.memoryJava")}
         </div>
         <div className="slider-row">
-          <span style={{ color: "var(--text-faint)", fontSize: 12 }}>1024 МБ</span>
+          <span style={{ color: "var(--text-faint)", fontSize: 12 }}>1024 {t("unit.mb")}</span>
           <input
             type="range"
             min={1024}
@@ -231,8 +230,8 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
             value={config.ram_mb}
             onChange={(e) => patchConfig({ ram_mb: parseInt(e.target.value, 10) })}
           />
-          <span style={{ color: "var(--text-faint)", fontSize: 12 }}>32 ГБ</span>
-          <span className="slider-value">{config.ram_mb} МБ</span>
+          <span style={{ color: "var(--text-faint)", fontSize: 12 }}>32 {t("unit.gb")}</span>
+          <span className="slider-value">{config.ram_mb} {t("unit.mb")}</span>
           <button className="btn sm" onClick={autoRam} title={t("settings.autoRam")}>
             <IconStats size={13} />
             {t("settings.autoRam")}
@@ -255,7 +254,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
               {r.path.split("\\").slice(-3).join("\\")}
             </span>
           ))}
-          {runtimes.length === 0 ? <span className="hint">Java не найдена — установите ниже</span> : null}
+          {runtimes.length === 0 ? <span className="hint">{t("settings.noJava")}</span> : null}
         </div>
         <div className="row" style={{ marginTop: 10 }}>
           <button className="btn" onClick={() => installJava(8)}>
@@ -271,10 +270,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
             Java 21
           </button>
         </div>
-        <div className="hint">
-          Нужная мажорная версия определяется автоматически из манифеста версии игры. Свежие JRE
-          скачиваются из Eclipse Adoptium и распаковываются в каталог установки.
-        </div>
+        <div className="hint">{t("settings.javaHint")}</div>
       </div>
 
       <div className="card">
@@ -393,7 +389,16 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
           />
           {t("settings.sounds")}
         </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={config.ui_sounds_enabled ?? true}
+            onChange={(e) => patchConfig({ ui_sounds_enabled: e.target.checked })}
+          />
+          {t("settings.uiSounds")}
+        </label>
         <div className="hint">{t("settings.soundsHint")}</div>
+        <div className="hint">{t("settings.uiSoundsHint")}</div>
         <div className="hint" style={{ marginTop: 8 }}>
           {t("settings.appearanceHint")}
         </div>
@@ -483,7 +488,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{a.username}</div>
-                  <div className="meta">{a.kind === "microsoft" ? "Microsoft" : "Офлайн"}</div>
+                  <div className="meta">{a.kind === "microsoft" ? "Microsoft" : t("play.offline")}</div>
                 </div>
                 {a.id === config.active_account_id ? <span className="badge release">{t("settings.active")}</span> : null}
                 <button
@@ -540,7 +545,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
         </div>
         {activeAccount?.kind === "microsoft" ? (
           <div className="hint">
-            Токен {activeAccount.username}: {activeAccount.expires_at_ms > Date.now() ? "действителен" : "истёк, войдите заново"}
+            {t("settings.token")} {activeAccount.username}: {activeAccount.expires_at_ms > Date.now() ? t("settings.tokenValid") : t("settings.tokenExpired")}
           </div>
         ) : null}
       </div>
@@ -554,7 +559,15 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
           <div>
             <div style={{ fontWeight: 700, fontSize: 14 }}>AstralLauncher {launcherVersion}</div>
             <div className="meta" style={{ color: "var(--text-faint)", fontSize: 12 }}>
-              Minecraft launcher · 2026
+              Minecraft launcher ·{" "}
+              <a
+                className="link"
+                href="https://github.com/Qenntyy1337/AstralLauncher"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <IconExternal size={12} /> GitHub
+              </a>
             </div>
           </div>
           <button className="btn" onClick={checkUpdates} disabled={updateBusy}>
@@ -592,7 +605,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
             </a>
             <div className="row" style={{ justifyContent: "flex-end" }}>
               <button className="btn" onClick={() => setDeviceCode(null)}>
-                Отмена
+                {t("settings.cancel")}
               </button>
               <button className="btn primary" onClick={finishMsLogin} disabled={msBusy}>
                 {msBusy ? <Spinner /> : <IconCheck size={14} />}

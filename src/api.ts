@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "./i18n";
 import type {
   Config,
   ManifestVersion,
@@ -16,11 +17,6 @@ import type {
   UpdateCheck,
 } from "./types";
 
-/**
- * Tauri по умолчанию ждёт camelCase-ключи аргументов, но дублируем их и в
- * snake_case (лишние ключи бэкенд игнорирует), а undefined не отправляем —
- * JSON.stringify выкинул бы такой ключ, и команда упала бы с «missing required key».
- */
 function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(args)) {
@@ -108,31 +104,31 @@ export const api = {
 
 export function formatBytes(n: number): string {
   if (n >= 1024 * 1024 * 1024) {
-    return `${(n / (1024 * 1024 * 1024)).toFixed(2)} ГБ`;
+    return `${(n / (1024 * 1024 * 1024)).toFixed(2)} ${t("unit.gb")}`;
   }
   if (n >= 1024 * 1024) {
-    return `${(n / (1024 * 1024)).toFixed(1)} МБ`;
+    return `${(n / (1024 * 1024)).toFixed(1)} ${t("unit.mb")}`;
   }
   if (n >= 1024) {
-    return `${Math.round(n / 1024)} КБ`;
+    return `${Math.round(n / 1024)} ${t("unit.kb")}`;
   }
-  return `${n} Б`;
+  return `${n} ${t("unit.b")}`;
 }
 
 export function formatSpeed(bps: number): string {
   if (bps <= 0) return "";
-  return `${formatBytes(bps)}/с`;
+  return `${formatBytes(bps)}/${t("unit.s")}`;
 }
 
 export function formatEta(sec: number): string {
   if (sec <= 0 || !isFinite(sec)) return "";
   if (sec >= 3600) {
-    return `${Math.floor(sec / 3600)} ч ${Math.floor((sec % 3600) / 60)} мин`;
+    return `${Math.floor(sec / 3600)} ${t("unit.h")} ${Math.floor((sec % 3600) / 60)} ${t("unit.min")}`;
   }
   if (sec >= 60) {
-    return `${Math.floor(sec / 60)} мин ${sec % 60} с`;
+    return `${Math.floor(sec / 60)} ${t("unit.min")} ${sec % 60} ${t("unit.s")}`;
   }
-  return `${sec} с`;
+  return `${sec} ${t("unit.s")}`;
 }
 
 export function formatDate(iso: string): string {

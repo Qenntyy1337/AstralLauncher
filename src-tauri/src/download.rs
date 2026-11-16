@@ -181,7 +181,6 @@ async fn download_one(
         return Ok(());
     }
     let part_path = item.dest.with_extension("part");
-    // докачка при обрыве: если есть недокачанный .part — пробуем продолжить с Range
     let resume_from: u64 = std::fs::metadata(&part_path).map(|m| m.len()).unwrap_or(0);
     let mut last_err = String::new();
     for attempt in 0u64..3 {
@@ -208,7 +207,6 @@ async fn download_one(
                 .await;
             continue;
         }
-        // сервер не поддержал Range (ответ 200 на запрос с Range) — качаем заново
         let resuming = resume_from > 0 && status == reqwest::StatusCode::PARTIAL_CONTENT;
         let mut file = if resuming {
             match std::fs::OpenOptions::new().append(true).open(&part_path) {
@@ -222,7 +220,6 @@ async fn download_one(
             }
         };
         let mut hasher = Sha1::new();
-        // при докачке хэш продолжается с уже скачанной части
         if resuming {
             match std::fs::File::open(&part_path) {
                 Ok(mut pf) => {
@@ -237,7 +234,6 @@ async fn download_one(
                     }
                 }
                 Err(_) => {
-                    // не смогли перечитать часть — начнём заново
                     let _ = std::fs::File::create(&part_path);
                 }
             }
@@ -247,7 +243,6 @@ async fn download_one(
         while let Some(chunk) = stream.next().await {
             if job.cancelled() {
                 drop(file);
-                // .part сохраняем — следующая попытка продолжит докачку
                 return Err("cancelled".to_string());
             }
             match chunk {
@@ -283,8 +278,6 @@ async fn download_one(
             tracker.file_done();
             return Ok(());
         }
-        // часть оставляем на диске для докачки следующей попыткой,
-        // но если это была последняя попытка — ошибка выйдет ниже
         if attempt == 2 {
             let _ = std::fs::remove_file(&part_path);
         }

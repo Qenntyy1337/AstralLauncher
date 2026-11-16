@@ -13,9 +13,6 @@ fn timestamp() -> String {
     chrono::Local::now().format("%H:%M:%S%.3f").to_string()
 }
 
-// Путь к файлу лога: root/logs/launcher-YYYY-MM-DD.log.
-// Конфиг берём через try_lock: если он уже заблокирован вызывающим кодом,
-// запись в файл просто пропускается, чтобы не deadlock'ать.
 fn log_file_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     let state = app.try_state::<crate::state::AppState>()?;
     let cfg = state.config.try_lock().ok()?;

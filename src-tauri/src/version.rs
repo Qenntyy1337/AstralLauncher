@@ -13,7 +13,6 @@ use crate::util::{ensure_dir, eval_rules};
 const MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 const RESOURCES_URL: &str = "https://resources.download.minecraft.net";
 
-/// Как приходит от Mojang (type / releaseTime)
 #[derive(Debug, Clone, Deserialize)]
 pub struct RawManifestVersion {
     pub id: String,
@@ -26,7 +25,6 @@ pub struct RawManifestVersion {
     pub sha1: Option<String>,
 }
 
-/// Как уходит на фронтенд (kind / release_time)
 #[derive(Debug, Clone, Serialize)]
 pub struct ManifestVersion {
     pub id: String,
@@ -355,8 +353,6 @@ pub fn client_jar_path(root: &PathBuf, id: &str) -> PathBuf {
     root.join("versions").join(id).join(format!("{}.jar", id))
 }
 
-/// Клиентский jar для запуска: свой, а если его нет — jar родителя по цепочке
-/// inheritsFrom (профили загрузчиков используют vanilla-jar родителя)
 pub fn resolve_client_jar(root: &PathBuf, id: &str) -> PathBuf {
     let mut current = id.to_string();
     for _ in 0..6 {
@@ -376,9 +372,6 @@ pub fn resolve_client_jar(root: &PathBuf, id: &str) -> PathBuf {
     client_jar_path(root, id)
 }
 
-/// Самовосстановление: докачивает недостающие json (самой версии или её
-/// родителей по inheritsFrom) из манифеста Mojang. Нужно, например, когда
-/// загрузчик установлен поверх прерванной установки ванили.
 pub async fn heal_version_chain(
     app: &tauri::AppHandle,
     root: &PathBuf,
@@ -505,9 +498,6 @@ pub(crate) fn library_artifact_url(
     Some((path, url, None, None))
 }
 
-/// Список скачивания для всех библиотек модели (включая natives-windows
-/// классификаторы). Используется при установке и для самовосстановления
-/// недостающих библиотек при запуске.
 pub fn collect_library_items(
     model: &VersionJson,
     root: &PathBuf,
@@ -597,8 +587,6 @@ pub async fn size_from_model(model: &VersionJson) -> SizeBreakdown {
     }
 }
 
-/// Размер версии до установки: локальный JSON, если есть, иначе качаем JSON с сервера Mojang.
-/// Результат кэшируется в AppState, чтобы не ходить в сеть повторно.
 pub async fn version_meta_size(
     state: &AppState,
     id: &str,
@@ -672,15 +660,11 @@ pub async fn install_version(
 
     let effective = merge_models(&loader_json, &base, version_id);
 
-    // библиотеки (включая natives-классификаторы) собираются одной функцией —
-    // той же самой, что и самовосстановление при запуске
     let (lib_items, natives_jars) = collect_library_items(&effective, root);
     let mut items: Vec<DownloadItem> = lib_items;
 
     if let Some(client) = effective.client_artifact() {
         if let Some(url) = client.url {
-            // jar кладём как versions/<id>/<id>.jar: именно этот путь ждут
-            // list_installed и запуск (для загрузчика dir = fabric-loader-... и т.п.)
             let jar_dir = loader_id.clone();
             let dest = root
                 .join("versions")
@@ -781,9 +765,6 @@ pub async fn install_version(
     let json_text = serde_json::to_string_pretty(&save_json).map_err(|e| e.to_string())?;
     std::fs::write(&json_dest, json_text).map_err(|e| e.to_string())?;
 
-    // Для профилей-наследников (fabric/forge) сохраняем также json родителя:
-    // без него запуск не сможет разрешить inheritsFrom и упадёт с
-    // «версия <родитель> не установлена»
     if let Some(parent_value) = base_json_value.clone() {
         if let Some(parent_id) = loader_json.as_ref().and_then(|l| l.inherits()) {
             let parent_dest = version_json_path(root, &parent_id);
@@ -914,9 +895,6 @@ pub fn list_installed(root: &PathBuf) -> Vec<InstalledVersion> {
                 .inherits()
                 .map(|p| client_jar_path(&root_dir, &p).exists())
                 .unwrap_or(false);
-        // показываем только реально запускаемые версии: запись без своего jar
-        // (или jar родителя по inheritsFrom) всё равно не запустится — например
-        // родительская ванила, установленная неявно вместе с загрузчиком
         if !has_jar {
             continue;
         }

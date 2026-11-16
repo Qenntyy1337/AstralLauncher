@@ -170,8 +170,6 @@ async fn install_version_cmd(
                 }
                 _ => version::install_version(&app, &root, &job, &job_id, &id, None).await,
             };
-            // Успешная установка делает версию активной (для загрузчика это его id,
-            // например fabric-loader-0.20.1-26.3)
             if let Ok(installed_id) = &res {
                 let st = app.state::<AppState>();
                 let mut guard = st.config.lock().unwrap();
@@ -395,8 +393,6 @@ fn cancel_job(state: State<'_, AppState>, job_id: String) -> bool {
     state.cancel_job(&job_id)
 }
 
-// ===== 1.0.1: статистика, диагностика, локальные моды, модпаки, обновления =====
-
 #[tauri::command]
 fn get_play_stats(state: State<'_, AppState>) -> stats::PlayStats {
     let root = state.config.lock().unwrap().root();
@@ -417,9 +413,8 @@ pub struct UpdateCheck {
     pub url: String,
 }
 
-// Манифест обновлений: {"latest": "1.0.2", "notes": "...", "url": "https://..."}
 const UPDATE_MANIFEST: &str =
-    "https://raw.githubusercontent.com/astrallauncher/astrallauncher/main/latest.json";
+    "https://raw.githubusercontent.com/Qenntyy1337/AstralLauncher/main/latest.json";
 
 #[tauri::command]
 async fn check_launcher_update() -> Result<UpdateCheck, String> {

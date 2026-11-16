@@ -31,8 +31,6 @@ pub fn runtime_java_exe(root: &PathBuf, major: u32) -> PathBuf {
     dir.join("bin").join("java.exe")
 }
 
-/// Мажорная версия java по выводу `java -version`:
-/// `openjdk version "21.0.1"` → 21, старый формат `"1.8.0_401"` → 8
 fn java_major_of(exe: &PathBuf) -> Option<u32> {
     let out = std::process::Command::new(exe)
         .arg("-version")
@@ -52,11 +50,6 @@ fn java_major_of(exe: &PathBuf) -> Option<u32> {
     Some(major)
 }
 
-/// Поиск java: явный путь из настроек (без проверки — выбор пользователя),
-/// затем встроенный runtime лаунчера, затем системные JDK. Системные
-/// кандидаты проверяются фактическим `java -version`: без этого первым
-/// находился старый JDK (например 11), который не понимает современные
-/// опции (--enable-native-access) и JVM падала на старте.
 pub fn find_java(cfg: &Config, root: &PathBuf, major: u32) -> Option<PathBuf> {
     if !cfg.java_path.trim().is_empty() {
         let p = PathBuf::from(cfg.java_path.trim());
@@ -101,7 +94,6 @@ pub fn find_java(cfg: &Config, root: &PathBuf, major: u32) -> Option<PathBuf> {
         let exe = if exe.is_file() {
             exe
         } else {
-            // некоторые JRE на PATH содержат только javaw.exe
             let jw = d.join("bin").join("javaw.exe");
             let jw2 = d.join("javaw.exe");
             if jw.is_file() {
@@ -116,7 +108,6 @@ pub fn find_java(cfg: &Config, root: &PathBuf, major: u32) -> Option<PathBuf> {
             found.push((m, exe));
         }
     }
-    // точное совпадение требуемой версии, затем минимальная подходящая
     found.sort_by(|a, b| a.0.cmp(&b.0));
     if let Some((_, p)) = found.iter().find(|(m, _)| *m == major) {
         return Some(p.clone());

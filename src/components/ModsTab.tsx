@@ -16,14 +16,15 @@ import { EmptyState, Spinner } from "./common";
 
 interface ModsTabProps {
   config: Config;
+  patchConfig: (patch: Partial<Config>) => void;
   startJob: (jobId: string, label: string) => void;
   showToast: (msg: string, ok?: boolean) => void;
   refreshSignal: number;
 }
 
-// «Карты» убраны: в Modrinth-каталоге для миров нет нормальной выдачи
 const TYPES = [
   { id: "mod", label: "mods.mods" },
+  { id: "modpack", label: "mods.modpacks" },
   { id: "resourcepack", label: "mods.resourcepacks" },
   { id: "shader", label: "mods.shaders" },
 ];
@@ -37,11 +38,11 @@ const TYPE_DIRS: Record<string, string> = {
   world: "saves",
 };
 
-export default function ModsTab({ config, startJob, showToast, refreshSignal }: ModsTabProps) {
+export default function ModsTab({ config, patchConfig, startJob, showToast, refreshSignal }: ModsTabProps) {
   const [type, setType] = useState("mod");
   const [query, setQuery] = useState("");
   const [mc, setMc] = useState("");
-  const [loader, setLoader] = useState("fabric");
+  const loaderFilter = config.play_loader === "fabric" || config.play_loader === "forge" ? config.play_loader : "";
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -60,9 +61,8 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
   }, []);
 
   useEffect(() => {
-    const stored = config.active_version;
-    if (stored && releases.includes(stored)) {
-      setMc((prev) => prev || stored);
+    if (config.active_version && (releases.length === 0 || releases.includes(config.active_version))) {
+      setMc(config.active_version);
     }
   }, [releases, config.active_version]);
 
@@ -77,7 +77,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
   const search = (newOffset: number) => {
     setLoading(true);
     api
-      .modrinthSearch(query, type, mc || null, type === "mod" ? loader : null, newOffset)
+      .modrinthSearch(query, type, mc || null, type === "mod" || type === "modpack" ? loaderFilter || null : null, newOffset)
       .then((r) => {
         setTotal(r.total_hits);
         setHits((prev) => (newOffset === 0 ? r.hits : [...prev, ...r.hits]));
@@ -96,7 +96,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
 
   useEffect(() => {
     search(0);
-  }, [type]);
+  }, [type, mc, loaderFilter]);
 
   const openDetails = (hit: SearchHit) => {
     setDetails(null);
@@ -105,7 +105,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
       .modrinthProject(hit.project_id)
       .then((p) => {
         setDetails(p);
-        return api.modrinthVersions(p.slug, mc || null, type === "mod" ? loader : null);
+        return api.modrinthVersions(p.slug, mc || null, type === "mod" || type === "modpack" ? loaderFilter || null : null);
       })
       .then((v) => setVersionsList(v))
       .catch((e) => {
@@ -114,8 +114,6 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
       });
   };
 
-  // Совместимая версия игры для конкретной сборки мода: пересечение с релизами,
-  // иначе первая подходящая. Позволяет качать мод без выбора версии игры в фильтре.
   const mcForVersion = (v: ModVersion): string => {
     const rel = releases.find((r) => v.game_versions.includes(r));
     if (rel) return rel;
@@ -123,8 +121,8 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
   };
 
   const loaderForVersion = (v: ModVersion): string => {
-    if (type !== "mod") return "";
-    if (v.loaders.includes(loader)) return loader;
+    if (type !== "mod" && type !== "modpack") return "";
+    if (loaderFilter && v.loaders.includes(loaderFilter)) return loaderFilter;
     return v.loaders.find((l) => LOADERS.includes(l)) ?? "";
   };
 
@@ -147,7 +145,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
   const quickInstall = (hit: SearchHit) => {
     setBusyCard(hit.project_id);
     api
-      .modrinthInstall(hit.project_id, hit.title, hit.project_type || type, null, mc, type === "mod" ? loader : "")
+      .modrinthInstall(hit.project_id, hit.title, hit.project_type || type, null, mc, type === "mod" || type === "modpack" ? loaderFilter : "")
       .then((jobId) => startJob(jobId, `Установка: ${hit.title}`))
       .catch((e) => {
         if (String(e).includes("нет совместимых версий")) {
@@ -208,8 +206,15 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
                   </option>
                 ))}
               </select>
-              {type === "mod" ? (
-                <select className="select" value={loader} onChange={(e) => setLoader(e.target.value)}>
+              {type === "mod" || type === "modpack" ? (
+                <select
+                  className="select"
+                  value={loaderFilter}
+                  onChange={(e) =>
+                    patchConfig({ play_loader: e.target.value === "" ? "vanilla" : e.target.value })
+                  }
+                >
+                  <option value="">{t("app.anyLoader")}</option>
                   {LOADERS.map((l) => (
                     <option key={l} value={l}>
                       {l}
@@ -287,7 +292,7 @@ export default function ModsTab({ config, startJob, showToast, refreshSignal }: 
             {t("mods.installedTitle")}: {t(TYPES.find((tp) => tp.id === type)?.label ?? "mods.mods")}
           </div>
           {installedFiles.length === 0 ? (
-            <div className="hint">Папка пуста. Скачайте что-нибудь из каталога.</div>
+            <div className="hint">{t("mods.emptyFolder")}</div>
           ) : (
             <div className="installed-col">
               {installedFiles.map((f) => (

@@ -1,5 +1,3 @@
-// Локализация интерфейса: RU (основной) и EN. Динамические сообщения бэкенда
-// остаются на русском — переводим статические подписи интерфейса.
 
 export type Lang = "ru" | "en";
 
@@ -10,6 +8,8 @@ const RU: Record<string, string> = {
   "tab.console": "Консоль",
 
   "app.running": "Игра запущена",
+  "app.started": "AstralLauncher запущен. Каталог: ",
+  "app.anyLoader": "Любой",
 
   "play.title": "Игра",
   "play.subtitle": "Версии Minecraft, мод-лоадеры и запуск",
@@ -30,6 +30,9 @@ const RU: Record<string, string> = {
   "play.changeInSettings": "сменить в настройках",
   "play.noAccount": "Аккаунт не выбран. Добавьте его во вкладке Настройки.",
   "play.installedVersions": "Установленные версии",
+  "play.loaderTitle": "Мод-лоадер для установки",
+  "play.forgeBlocked": "Forge доступен только для релизов — выберите Vanilla или Fabric",
+  "play.installVersion": "Установить версию",
   "play.nothingInstalled": "Пока ничего не установлено. Выберите версию в каталоге слева.",
   "play.readyToLaunch": "готова к запуску",
   "play.noJar": "нет jar",
@@ -60,6 +63,8 @@ const RU: Record<string, string> = {
   "mods.mods": "Моды",
   "mods.resourcepacks": "Ресурспаки",
   "mods.shaders": "Шейдеры",
+  "mods.modpacks": "Модпаки",
+  "mods.installing": "Установка модпака",
   "mods.searchPlaceholder": "Поиск по названию",
   "mods.gameVersion": "Версия игры...",
   "mods.find": "Найти",
@@ -118,6 +123,8 @@ const RU: Record<string, string> = {
   "settings.accentAmber": "Янтарный",
   "settings.sounds": "Звуковые подсказки",
   "settings.soundsHint": "Короткие звуки при запуске игры и окончании загрузок.",
+  "settings.uiSounds": "Звуки нажатий",
+  "settings.uiSoundsHint": "Лёгкий щелчок при нажатии кнопок и переключателей.",
   "settings.language": "Язык интерфейса",
   "settings.appearanceHint":
     "Свои обои (PNG/JPG/WebP/GIF до 12 МБ) копируются в каталог лаунчера и применяются сразу. Слайдеры регулируют силу размытия, затемнения и авроры.",
@@ -135,6 +142,9 @@ const RU: Record<string, string> = {
   "settings.active": "активен",
   "settings.delete": "Удалить аккаунт",
   "settings.msClientId": "MS Azure client_id (для входа через Microsoft)",
+  "settings.imagesFilter": "Изображения",
+  "settings.token": "Токен",
+  "settings.cancel": "Отмена",
   "settings.msLogin": "Войти через Microsoft",
   "settings.msHint":
     "Вход выполняется через официальное device code flow: введите код на странице Microsoft, затем нажмите «Я ввёл код». Токены хранятся локально в конфигурации лаунчера.",
@@ -163,6 +173,7 @@ const RU: Record<string, string> = {
   "console.clear": "Очистить",
   "console.openLogs": "Папка логов",
   "console.copied": "Консоль скопирована в буфер обмена",
+  "console.empty": "Логов нет. Установите версию или запустите игру.",
   "console.cleared": "Консоль очищена",
 
   "crash.title": "Игра завершилась с ошибкой",
@@ -176,6 +187,13 @@ const RU: Record<string, string> = {
   "download.cancel": "Отменить",
   "download.eta": "≈",
   "download.cancelled": "Задача отменена",
+  "unit.mb": "МБ",
+  "unit.gb": "ГБ",
+  "unit.kb": "КБ",
+  "unit.b": "Б",
+  "unit.h": "ч",
+  "unit.min": "мин",
+  "unit.s": "с",
 };
 
 const EN: Record<string, string> = {
@@ -185,6 +203,8 @@ const EN: Record<string, string> = {
   "tab.console": "Console",
 
   "app.running": "Game running",
+  "app.started": "AstralLauncher started. Directory: ",
+  "app.anyLoader": "Any",
 
   "play.title": "Play",
   "play.subtitle": "Minecraft versions, mod loaders and launching",
@@ -205,6 +225,9 @@ const EN: Record<string, string> = {
   "play.changeInSettings": "change in settings",
   "play.noAccount": "No account selected. Add one in Settings.",
   "play.installedVersions": "Installed versions",
+  "play.loaderTitle": "Mod loader for install",
+  "play.forgeBlocked": "Forge supports releases only — choose Vanilla or Fabric",
+  "play.installVersion": "Install version",
   "play.nothingInstalled": "Nothing installed yet. Pick a version in the catalog.",
   "play.readyToLaunch": "ready to launch",
   "play.noJar": "no jar",
@@ -235,6 +258,8 @@ const EN: Record<string, string> = {
   "mods.mods": "Mods",
   "mods.resourcepacks": "Resource packs",
   "mods.shaders": "Shaders",
+  "mods.modpacks": "Modpacks",
+  "mods.installing": "Installing modpack",
   "mods.searchPlaceholder": "Search by name",
   "mods.gameVersion": "Game version...",
   "mods.find": "Search",
@@ -293,6 +318,8 @@ const EN: Record<string, string> = {
   "settings.accentAmber": "Amber",
   "settings.sounds": "Sound hints",
   "settings.soundsHint": "Short sounds when the game starts and downloads finish.",
+  "settings.uiSounds": "UI click sounds",
+  "settings.uiSoundsHint": "A soft click when pressing buttons and toggles.",
   "settings.language": "Interface language",
   "settings.appearanceHint":
     "Custom wallpapers (PNG/JPG/WebP/GIF up to 12 MB) are copied into the launcher directory and applied instantly. Sliders control blur, dim and aurora strength.",
@@ -310,6 +337,9 @@ const EN: Record<string, string> = {
   "settings.active": "active",
   "settings.delete": "Delete account",
   "settings.msClientId": "MS Azure client_id (for Microsoft sign-in)",
+  "settings.imagesFilter": "Images",
+  "settings.token": "Token",
+  "settings.cancel": "Cancel",
   "settings.msLogin": "Sign in with Microsoft",
   "settings.msHint":
     "Sign-in uses the official device code flow: enter the code on the Microsoft page, then press “I entered the code”. Tokens are stored locally in the launcher config.",
@@ -338,6 +368,7 @@ const EN: Record<string, string> = {
   "console.clear": "Clear",
   "console.openLogs": "Log folder",
   "console.copied": "Console copied to clipboard",
+  "console.empty": "No logs yet. Install a version or launch the game.",
   "console.cleared": "Console cleared",
 
   "crash.title": "The game exited with an error",
@@ -351,6 +382,13 @@ const EN: Record<string, string> = {
   "download.cancel": "Cancel",
   "download.eta": "≈",
   "download.cancelled": "Task cancelled",
+  "unit.mb": "MB",
+  "unit.gb": "GB",
+  "unit.kb": "KB",
+  "unit.b": "B",
+  "unit.h": "h",
+  "unit.min": "min",
+  "unit.s": "s",
 };
 
 const DICTS: Record<Lang, Record<string, string>> = { ru: RU, en: EN };
@@ -368,3 +406,48 @@ export function getLang(): Lang {
 export function t(key: string): string {
   return DICTS[currentLang][key] ?? DICTS.ru[key] ?? key;
 }
+
+const MSG_EN: [RegExp, string][] = [
+  [/^Задача отменена$/, "Task cancelled"],
+  [/^Установлено: (.+) \((.+)\)$/, "Installed: $1 ($2)"],
+  [/^Установка: (.+)$/, "Install: $1"],
+  [/^Модпак: (.+)$/, "Modpack: $1"],
+  [/^Модпак установлен: (.+)$/, "Modpack installed: $1"],
+  [/^Файл (.+)$/, "File $1"],
+  [/^Игра завершена$/, "Game finished"],
+  [/^Игра запущена: (.+)$/, "Game started: $1"],
+  [/^Запуск\.\.\.$/, "Launching..."],
+  [/^Процесс игры завершён с кодом (\d+).*$/, "Game process exited with code $1"],
+  [/^Игра завершилась с ошибкой: (.+)$/, "The game exited with an error: $1"],
+  [/^Мод установлен: (.+)$/, "Mod installed: $1"],
+  [/^Локальный мод установлен: (.+)$/, "Local mod installed: $1"],
+  [/^Java \d+ не найдена.*$/, "Java not found — install it in the Play tab"],
+  [/^Каталог установки: (.+)$/, "Install directory: $1"],
+  [/^Обои применены$/, "Wallpaper applied"],
+  [/^Аккаунт добавлен$/, "Account added"],
+  [/^Вход через Microsoft выполнен.*$/, "Microsoft sign-in complete"],
+  [/^Консоль очищена$/, "Console cleared"],
+  [/^Консоль скопирована в буфер обмена$/, "Console copied to clipboard"],
+  [/^Поддерживаются .*$/, "Supported files: .jar (mods) and .mrpack (modpacks)"],
+  [/^Папка пуста.*$/, "Folder is empty. Download something from the catalog."],
+  [/^Нет аккаунтов.*$/, "No accounts yet."],
+];
+
+const MSG_EN2: [RegExp, string][] = [
+  [/^Установка модпака$/, "Installing modpack"],
+  [/^Установка Java (.+)$/, "Install Java $1"],
+  [/^Установка (.+)$/, "Install $1"],
+  [/^Удалено: (.+)$/, "Deleted: $1"],
+];
+
+export function tMsg(msg: string): string {
+  if (getLang() !== "en") return msg;
+  for (const [re, rep] of MSG_EN2) {
+    if (re.test(msg)) return msg.replace(re, rep);
+  }
+  for (const [re, rep] of MSG_EN) {
+    if (re.test(msg)) return msg.replace(re, rep);
+  }
+  return msg;
+}
+

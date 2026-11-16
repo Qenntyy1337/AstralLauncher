@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { IconCancel } from "../icons";
 
 export function ProgressBar({ value, className }: { value: number; className?: string }) {
@@ -62,5 +63,47 @@ export function CancelButton({ onClick, title }: { onClick: () => void; title: s
     <button className="btn sm danger" title={title} onClick={onClick}>
       <IconCancel size={14} />
     </button>
+  );
+}
+
+export function AccountHead({ name, size = 32 }: { name: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  if (failed || !name) {
+    return (
+      <div
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 4,
+          background: "var(--bg-active)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: size * 0.45,
+          fontWeight: 700,
+          color: "var(--accent)",
+          flexShrink: 0,
+        }}
+      >
+        {(name || "?").slice(0, 1).toUpperCase()}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={`https://mc-heads.net/avatar/${encodeURIComponent(name)}/${size * 2 > 64 ? 64 : Math.max(32, size)}`}
+      alt={name}
+      width={size}
+      height={size}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 4,
+        flexShrink: 0,
+        imageRendering: "pixelated" as const,
+        background: "var(--bg-active)",
+      }}
+      onError={() => setFailed(true)}
+    />
   );
 }

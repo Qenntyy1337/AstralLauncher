@@ -29,6 +29,7 @@ export interface Config {
   aurora_hue: number;
   accent: string;
   sounds_enabled: boolean;
+  ui_sounds_enabled: boolean;
   language: string;
 }
 
