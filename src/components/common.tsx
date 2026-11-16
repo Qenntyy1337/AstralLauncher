@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { IconCancel } from "../icons";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { IconCancel, IconChevron } from "../icons";
 
 export function ProgressBar({ value, className }: { value: number; className?: string }) {
   const pct = Math.max(0, Math.min(100, value));
@@ -105,5 +105,99 @@ export function AccountHead({ name, size = 32 }: { name: string; size?: number }
       }}
       onError={() => setFailed(true)}
     />
+  );
+}
+
+export interface DropdownOption {
+  value: string;
+  label: string;
+}
+
+export function Dropdown({
+  value,
+  options,
+  onChange,
+  style,
+  title,
+  minWidth,
+}: {
+  value: string;
+  options: DropdownOption[];
+  onChange: (v: string) => void;
+  style?: CSSProperties;
+  title?: string;
+  minWidth?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onScroll);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onScroll);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  const toggle = () => {
+    const el = ref.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const menuH = Math.min(options.length * 32 + 14, 300);
+      const fitsBelow = r.bottom + menuH + 8 <= window.innerHeight;
+      setRect({
+        left: r.left,
+        top: fitsBelow ? r.bottom + 6 : Math.max(8, r.top - menuH - 6),
+        width: r.width,
+      });
+    }
+    setOpen((o) => !o);
+  };
+
+  const current = options.find((o) => o.value === value);
+  return (
+    <div ref={ref} className="dd" style={style}>
+      <button
+        type="button"
+        className="dd-btn"
+        title={title}
+        style={minWidth ? { minWidth } : undefined}
+        onClick={toggle}
+      >
+        <span className="dd-label">{current ? current.label : ""}</span>
+        <IconChevron size={14} className={open ? "dd-chev open" : "dd-chev"} />
+      </button>
+      {open && rect ? (
+        <div className="dd-menu" style={{ left: rect.left, top: rect.top, width: rect.width }}>
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              className={o.value === value ? "dd-item active" : "dd-item"}
+              onClick={() => {
+                setOpen(false);
+                onChange(o.value);
+              }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }

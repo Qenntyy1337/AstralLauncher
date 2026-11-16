@@ -17,7 +17,7 @@ import {
   IconStats,
   IconRefresh,
 } from "../icons";
-import { Spinner } from "./common";
+import { Dropdown, Spinner, AccountHead } from "./common";
 
 interface SettingsTabProps {
   config: Config;
@@ -66,7 +66,9 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
           showToast(`${t("settings.newVersion")}: ${u.latest}`, true);
         }
       })
-      .catch(() => showToast(t("settings.updateFailed"), false))
+      .catch((e) =>
+        showToast(String(e).includes("404") ? t("settings.updateMissing") : t("settings.updateFailed"), false),
+      )
       .finally(() => setUpdateBusy(false));
   };
 
@@ -278,29 +280,29 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
         <div className="row wrap" style={{ alignItems: "flex-end" }}>
           <div>
             <span className="label">{t("settings.wallpaper")}</span>
-            <select
-              className="select"
+            <Dropdown
               style={{ minWidth: 220 }}
               value={config.wallpaper || "aurora"}
-              onChange={(e) => patchConfig({ wallpaper: e.target.value })}
-            >
-              <option value="aurora">{t("settings.wpAurora")}</option>
-              <option value="nebula">{t("settings.wpNebula")}</option>
-              <option value="ember">{t("settings.wpEmber")}</option>
-              <option value="custom">{t("settings.wpCustom")}</option>
-              <option value="none">{t("settings.wpNone")}</option>
-            </select>
+              options={[
+                { value: "aurora", label: t("settings.wpAurora") },
+                { value: "nebula", label: t("settings.wpNebula") },
+                { value: "ember", label: t("settings.wpEmber") },
+                { value: "custom", label: t("settings.wpCustom") },
+                { value: "none", label: t("settings.wpNone") },
+              ]}
+              onChange={(v) => patchConfig({ wallpaper: v })}
+            />
           </div>
           <div>
             <span className="label">{t("settings.language")}</span>
-            <select
-              className="select"
+            <Dropdown
               value={config.language || "ru"}
-              onChange={(e) => patchConfig({ language: e.target.value })}
-            >
-              <option value="ru">Русский</option>
-              <option value="en">English</option>
-            </select>
+              options={[
+                { value: "ru", label: "Русский" },
+                { value: "en", label: "English" },
+              ]}
+              onChange={(v) => patchConfig({ language: v })}
+            />
           </div>
           <button className="btn" onClick={pickWallpaper}>
             <IconImage size={15} />
@@ -483,9 +485,7 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
                 className={`list-item ${a.id === config.active_account_id ? "selected" : ""}`}
                 onClick={() => api.setActiveAccount(a.id).then(patchConfig).catch(() => {})}
               >
-                <div className="sidebar-account" style={{ width: 32, height: 32, fontSize: 13 }}>
-                  {a.username.slice(0, 1).toUpperCase()}
-                </div>
+                <AccountHead name={a.username} size={32} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{a.username}</div>
                   <div className="meta">{a.kind === "microsoft" ? "Microsoft" : t("play.offline")}</div>
@@ -563,8 +563,10 @@ export default function SettingsTab({ config, patchConfig, startJob, showToast }
               <a
                 className="link"
                 href="https://github.com/Qenntyy1337/AstralLauncher"
-                target="_blank"
-                rel="noreferrer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  api.openExternal("https://github.com/Qenntyy1337/AstralLauncher").catch(() => {});
+                }}
               >
                 <IconExternal size={12} /> GitHub
               </a>

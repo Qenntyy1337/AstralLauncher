@@ -13,7 +13,7 @@ import {
   IconRefresh,
   IconStats,
 } from "../icons";
-import { EmptyState, Spinner, AccountHead } from "./common";
+import { Dropdown, EmptyState, Spinner, AccountHead } from "./common";
 
 interface PlayTabProps {
   config: Config;
@@ -233,18 +233,12 @@ export default function PlayTab({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
-            <select
-              className="select"
+            <Dropdown
               value={loader}
-              onChange={(e) => setLoader(e.target.value)}
+              options={LOADERS.map((l) => ({ value: l.id, label: l.label }))}
+              onChange={setLoader}
               title={t("play.loaderTitle")}
-            >
-              {LOADERS.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
+            />
           </div>
           {!versions ? (
             <div className="row" style={{ justifyContent: "center", padding: 30 }}>

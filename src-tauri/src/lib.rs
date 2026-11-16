@@ -417,6 +417,24 @@ const UPDATE_MANIFEST: &str =
     "https://raw.githubusercontent.com/Qenntyy1337/AstralLauncher/main/latest.json";
 
 #[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("unsupported url scheme".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    let opened = std::process::Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .spawn()
+        .map(|_| ());
+    #[cfg(not(target_os = "windows"))]
+    let opened = std::process::Command::new("xdg-open")
+        .arg(&url)
+        .spawn()
+        .map(|_| ());
+    opened.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn check_launcher_update() -> Result<UpdateCheck, String> {
     let value = http::get_json(UPDATE_MANIFEST).await?;
     let latest = value
@@ -697,6 +715,7 @@ pub fn run() {
             get_play_stats,
             get_launcher_version,
             check_launcher_update,
+            open_external,
             get_system_ram_mb,
             reveal_path,
             open_logs_dir,

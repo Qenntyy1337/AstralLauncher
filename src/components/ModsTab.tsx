@@ -12,7 +12,7 @@ import {
   IconCheck,
   IconUser,
 } from "../icons";
-import { EmptyState, Spinner } from "./common";
+import { Dropdown, EmptyState, Spinner } from "./common";
 
 interface ModsTabProps {
   config: Config;
@@ -198,29 +198,23 @@ export default function ModsTab({ config, patchConfig, startJob, showToast, refr
                   }}
                 />
               </div>
-              <select className="select" value={mc} onChange={(e) => setMc(e.target.value)}>
-                <option value="">{t("mods.gameVersion")}</option>
-                {releases.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+              <Dropdown
+                value={mc}
+                options={[
+                  { value: "", label: t("mods.gameVersion") },
+                  ...releases.map((r) => ({ value: r, label: r })),
+                ]}
+                onChange={setMc}
+              />
               {type === "mod" || type === "modpack" ? (
-                <select
-                  className="select"
+                <Dropdown
                   value={loaderFilter}
-                  onChange={(e) =>
-                    patchConfig({ play_loader: e.target.value === "" ? "vanilla" : e.target.value })
-                  }
-                >
-                  <option value="">{t("app.anyLoader")}</option>
-                  {LOADERS.map((l) => (
-                    <option key={l} value={l}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: t("app.anyLoader") },
+                    ...LOADERS.map((l) => ({ value: l, label: l })),
+                  ]}
+                  onChange={(v) => patchConfig({ play_loader: v === "" ? "vanilla" : v })}
+                />
               ) : null}
               <button className="btn primary" onClick={() => search(0)}>
                 <IconSearch size={14} />

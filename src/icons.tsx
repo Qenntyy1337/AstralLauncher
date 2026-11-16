@@ -281,3 +281,11 @@ export function LogoMark({ size = 28 }: IconProps) {
     </svg>
   );
 }
+
+export function IconChevron(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Svg>
+  );
+}

@@ -100,6 +100,7 @@ export const api = {
   openLogsDir: () => call<void>("open_logs_dir"),
   installLocalMod: (path: string) => call<string>("install_local_mod_cmd", { path }),
   installMrpack: (path: string) => call<string>("install_mrpack_cmd", { path }),
+  openExternal: (url: string) => call<void>("open_external", { url }),
 };
 
 export function formatBytes(n: number): string {
